@@ -1,0 +1,1144 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Wright–Fisher wastewater deconvolution configuration schema",
+  "type": "object",
+  "additionalProperties": true,
+  "definitions": {
+    "probability": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "strictProbability": { "type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 1.0 },
+    "positiveNumber": { "type": "number", "exclusiveMinimum": 0.0 },
+    "nonNegativeNumber": { "type": "number", "minimum": 0.0 },
+    "positiveInteger": { "type": "integer", "minimum": 1 },
+    "nonNegativeInteger": { "type": "integer", "minimum": 0 },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "stringNonEmpty": { "type": "string", "minLength": 1 },
+    "twoNumberArray": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "numberLike": {
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^-?\\d+(\\.\\d+)?(e-?\\d+)?$" }
+      ]
+    },
+    "numberLikeArray2": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/numberLike" },
+      "minItems": 2,
+      "maxItems": 2
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$",
+      "default": "1.0"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "stage_order": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "version"]
+    },
+    "data_dir": { "type": "string" },
+    "results_dir": { "type": "string" },
+    "seeds": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "global": { "$ref": "#/definitions/nonNegativeInteger" },
+        "numpy": { "$ref": "#/definitions/nonNegativeInteger" },
+        "python": { "$ref": "#/definitions/nonNegativeInteger" },
+        "per_stage_offset": { "$ref": "#/definitions/nonNegativeInteger" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "run_id": { "type": "string" },
+        "description": { "type": "string" },
+        "seed": { "$ref": "#/definitions/nonNegativeInteger" },
+        "deterministic": { "type": "boolean" },
+        "threads": { "$ref": "#/definitions/positiveInteger" },
+        "float_dtype": { "type": "string", "enum": ["float64", "float32"] },
+        "site_ids": { "type": "array", "items": { "type": "string" } },
+        "lineage_filter": { "type": "array", "items": { "type": "string" } },
+        "fail_on_warning": { "type": "boolean" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "n_jobs": { "type": "integer" },
+        "use_numba_if_available": { "type": "boolean" },
+        "float_dtype": { "type": "string", "enum": ["float64", "float32"] },
+        "warnings_as_errors": { "type": "boolean" }
+      }
+    },
+    "numerics": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "eps": { "oneOf": [ { "type": "number" }, { "type": "string", "pattern": "^-?\\d+(\\.\\d+)?(e-?\\d+)?$" } ] },
+        "log_clip": { "$ref": "#/definitions/numberLike" },
+        "simplex_tol": { "$ref": "#/definitions/numberLike" },
+        "max_float": { "$ref": "#/definitions/numberLike" }
+      }
+    },
+    "io": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "data_dir": { "type": "string" },
+        "results_dir": { "type": "string" },
+        "jahn_like_path": { "type": "string" },
+        "signatures_path": { "type": "string" },
+        "lineages_path": { "type": ["string", "null"] },
+        "write_parquet": { "type": "boolean" },
+        "image_formats": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["pdf", "png"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "float_precision": { "type": "integer", "minimum": 3, "maximum": 16 },
+        "use_symlink_if_possible": { "type": "boolean" },
+        "parquet_compression": { "type": "string" },
+        "csv_float_format": { "type": "string" },
+        "write_manifest": { "type": "boolean" },
+        "resolve_relative_to_root": { "type": "boolean" }
+      }
+    },
+    "plotting": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "style": { "type": "string" },
+        "figsize": { "$ref": "#/definitions/twoNumberArray" },
+        "dpi": { "$ref": "#/definitions/positiveInteger" },
+        "date_format": { "type": "string" },
+        "grid": { "type": "boolean" },
+        "tight_layout": { "type": "boolean" },
+        "legend": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "place_below": { "type": "boolean" },
+            "bbox_to_anchor": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "loc": { "type": "string" },
+            "ncol": { "$ref": "#/definitions/positiveInteger" }
+          }
+        },
+        "save": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "pdf": { "type": "boolean" },
+            "png": { "type": "boolean" }
+          }
+        },
+        "legend_ncol": { "$ref": "#/definitions/positiveInteger" },
+        "legend_fontsize": { "$ref": "#/definitions/positiveNumber" },
+        "title_fontsize": { "$ref": "#/definitions/positiveNumber" },
+        "tick_fontsize": { "$ref": "#/definitions/positiveNumber" },
+        "colors": {
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            { "type": "object", "additionalProperties": { "type": "string" } }
+          ]
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "level": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"] },
+        "timezone": { "type": "string" },
+        "jsonl": { "type": "boolean" },
+        "fields": { "type": "array", "items": { "type": "string" } },
+        "flush_seconds": { "$ref": "#/definitions/nonNegativeNumber" },
+        "filename_prefix": { "type": "string" },
+        "structured_jsonl": { "type": "boolean" },
+        "log_context": { "type": "string" }
+      }
+    },
+    "toggles": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "fail_on_unknown_config_keys": { "type": "boolean" },
+        "strict_schema": { "type": "boolean" },
+        "save_pdf": { "type": "boolean" },
+        "save_png": { "type": "boolean" },
+        "write_parquet": { "type": "boolean" },
+        "write_csv": { "type": "boolean" }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "files": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "jahn_like": { "type": "string" },
+            "signatures": { "type": "string" },
+            "lineages": { "type": "string" }
+          }
+        },
+        "schema_check": { "type": "boolean" },
+        "date_format": { "type": "string" },
+        "mutation_regex": { "type": "string" },
+        "filters": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "min_coverage": { "$ref": "#/definitions/nonNegativeInteger" },
+            "min_samples_per_site": { "$ref": "#/definitions/nonNegativeInteger" },
+            "sites_include": { "type": "array", "items": { "type": "string" } },
+            "sites_exclude": { "type": "array", "items": { "type": "string" } },
+            "mutations_exclude_regex": { "type": "string" }
+          }
+        },
+        "af_left_censor": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "method": { "type": "string", "enum": ["clip", "censor"] },
+            "lod_af": { "$ref": "#/definitions/probability" }
+          }
+        },
+        "harmonize": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "uppercase_mutations": { "type": "boolean" },
+            "drop_non_canonical": { "type": "boolean" }
+          }
+        },
+        "replicate_analysis": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enable": { "type": "boolean" },
+            "max_time_diff_days": { "type": "integer" },
+            "min_mutations_overlap": { "type": "integer" }
+          }
+        },
+        "bias_detection": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enable": { "type": "boolean" },
+            "dropout_quantile": { "$ref": "#/definitions/strictProbability" },
+            "mapping_bias_abs_af_diff": { "$ref": "#/definitions/probability" }
+          }
+        },
+        "feature_store": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "filename_prefix": { "type": "string" } }
+        },
+        "figures": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "coverage_kde_bw": { "type": "string" },
+            "missingness_sort": { "type": "string" }
+          }
+        },
+        "filter_sites": { "type": "array", "items": { "type": "string" } },
+        "filter_dates": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "start": { "$ref": "#/definitions/date" }, "end": { "$ref": "#/definitions/date" } }
+        },
+        "left_censor_af": { "$ref": "#/definitions/probability" },
+        "lod_af": { "$ref": "#/definitions/probability" },
+        "replicates": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "method": { "type": "string", "enum": ["mean", "median", "sum", "first"] },
+            "bland_altman_sd": { "$ref": "#/definitions/positiveNumber" }
+          }
+        },
+        "missingness": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "max_missing_rate": { "$ref": "#/definitions/probability" } }
+        },
+        "coverage_plot": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "bins": { "$ref": "#/definitions/positiveInteger" },
+            "kde_bw": { "$ref": "#/definitions/positiveNumber" }
+          }
+        }
+      }
+    },
+    "signatures": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "normalize_per_lineage": { "type": "boolean" },
+        "allow_partial": { "type": "boolean" },
+        "min_weight": { "type": "number" }
+      }
+    },
+    "priors": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "beta_binomial": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "parameterization": { "type": "string", "enum": ["p_phi"] },
+            "init": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "method": { "type": "string" },
+                "p_clip": { "$ref": "#/definitions/numberLikeArray2" },
+                "phi_init": { "$ref": "#/definitions/numberLike" }
+              }
+            },
+            "mle": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "method": { "type": "string" },
+                "max_iters": { "$ref": "#/definitions/positiveInteger" },
+                "tol": { "$ref": "#/definitions/positiveNumber" },
+                "step_damp": { "$ref": "#/definitions/positiveNumber" }
+              }
+            },
+            "constraints": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "p_bounds": { "$ref": "#/definitions/numberLikeArray2" },
+                "phi_bounds": { "$ref": "#/definitions/numberLikeArray2" },
+                "phi_bounds_scale": { "$ref": "#/definitions/numberLike" }
+              }
+            },
+            "heteroskedastic": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "model": { "type": "string", "enum": ["loglinear", "power", "constant"] },
+                "knots": { "type": "array", "items": { "$ref": "#/definitions/numberLike" } },
+                "slope_bounds": { "$ref": "#/definitions/numberLikeArray2" }
+              }
+            },
+            "stabilization": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "add_counts": { "$ref": "#/definitions/numberLike" },
+                "add_coverage": { "$ref": "#/definitions/numberLike" }
+              }
+            },
+            "diagnostics": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "qq_points": { "$ref": "#/definitions/positiveInteger" },
+                "residual_bins": { "$ref": "#/definitions/positiveInteger" },
+                "density_bins": { "$ref": "#/definitions/positiveInteger" }
+              }
+            },
+            "outputs": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "morita_ess": { "type": "boolean" },
+                "shrinkage_stats": { "type": "boolean" },
+                "ll_by_mutation": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "method": { "type": "string" },
+        "max_iter": { "$ref": "#/definitions/positiveInteger" },
+        "tol": { "$ref": "#/definitions/positiveNumber" },
+        "min_alpha": { "$ref": "#/definitions/positiveNumber" },
+        "min_beta": { "$ref": "#/definitions/positiveNumber" },
+        "eps": { "$ref": "#/definitions/numberLike" },
+        "heteroskedastic": { "type": "boolean" },
+        "phi_model": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "type": { "type": "string", "enum": ["constant", "power", "log"] },
+            "bounds": { "$ref": "#/definitions/numberLikeArray2" }
+          }
+        },
+        "stabilization": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "add_pseudocounts": { "type": "boolean" },
+            "pseudo_alpha": { "$ref": "#/definitions/positiveNumber" },
+            "pseudo_beta": { "$ref": "#/definitions/positiveNumber" }
+          }
+        },
+        "morita_ess": { "type": "boolean" },
+        "robustify": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "clip_extreme_af": { "type": "boolean" },
+            "clip_eps": { "$ref": "#/definitions/strictProbability" }
+          }
+        }
+      }
+    },
+    "likelihood": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "weight_mode": { "type": "string", "enum": ["eb_beta_binomial", "identity"] },
+        "weight_min": { "$ref": "#/definitions/nonNegativeNumber" },
+        "ridge_lambda": { "$ref": "#/definitions/nonNegativeNumber" },
+        "objective_trace": { "type": "boolean" },
+        "constraints": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enforce_nonnegativity": { "type": "boolean" },
+            "enforce_sum_to_one": { "type": "boolean" },
+            "enforce_simplex": { "type": "boolean" },
+            "simplex_tol": { "$ref": "#/definitions/positiveNumber" }
+          }
+        },
+        "solver_order": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["slsqp", "pgd"] }
+        },
+        "pgd": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "max_iters": { "$ref": "#/definitions/positiveInteger" },
+            "tol": { "$ref": "#/definitions/positiveNumber" },
+            "step_size_init": { "$ref": "#/definitions/positiveNumber" },
+            "backtracking_alpha": { "$ref": "#/definitions/strictProbability" },
+            "backtracking_beta": { "$ref": "#/definitions/strictProbability" },
+            "simplex_projection": { "type": "string" },
+            "history": { "type": "boolean" }
+          }
+        },
+        "slsqp": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "max_iters": { "$ref": "#/definitions/positiveInteger" },
+            "ftol": { "$ref": "#/definitions/positiveNumber" },
+            "eps": { "$ref": "#/definitions/positiveNumber" }
+          }
+        },
+        "composition_checks": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "clr": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "pseudocount": { "$ref": "#/definitions/positiveNumber" }
+              }
+            },
+            "alr": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "reference": { "type": "string" },
+                "pseudocount": { "$ref": "#/definitions/positiveNumber" }
+              }
+            }
+          }
+        },
+        "identifiability": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "kappa_profile": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "lambda_grid": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": { "$ref": "#/definitions/nonNegativeNumber" },
+                      "minItems": 3
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "type": { "type": "string", "enum": ["logspace", "linspace"] },
+                        "start": { "$ref": "#/definitions/nonNegativeNumber" },
+                        "end": { "$ref": "#/definitions/nonNegativeNumber" },
+                        "num": { "$ref": "#/definitions/positiveInteger" }
+                      },
+                      "required": ["type", "start", "end", "num"]
+                    }
+                  ]
+                },
+                "cond_method": { "type": "string", "enum": ["svd", "eig", "auto"] }
+              }
+            },
+            "overlap": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "metric": { "type": "string", "enum": ["cosine", "jaccard", "correlation"] }
+              }
+            },
+            "unknown_bucket": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "enabled": { "type": "boolean" },
+                "min_mass_report": { "$ref": "#/definitions/probability" },
+                "max_mass": { "$ref": "#/definitions/probability" },
+                "min_mass": { "$ref": "#/definitions/probability" },
+                "curve_smoothing_window": { "$ref": "#/definitions/positiveInteger" }
+              }
+            },
+            "merge_suggestions": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "top_k": { "$ref": "#/definitions/positiveInteger" },
+                "overlap_threshold": { "$ref": "#/definitions/probability" }
+              }
+            },
+            "compute_overlap": { "type": "boolean" },
+            "overlap_metric": { "type": "string", "enum": ["cosine", "jaccard", "correlation"] },
+            "overlap_threshold": { "$ref": "#/definitions/probability" }
+          }
+        },
+        "lambda_reg": { "$ref": "#/definitions/nonNegativeNumber" },
+        "lambda_grid": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/nonNegativeNumber" },
+          "minItems": 3
+        },
+        "weights": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "from_priors": { "type": "boolean" },
+            "scale": { "$ref": "#/definitions/positiveNumber" }
+          }
+        },
+        "solvers": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "order_preference": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["slsqp", "pgd"] },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "pgd": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "max_iter": { "$ref": "#/definitions/positiveInteger" },
+                "tol": { "$ref": "#/definitions/positiveNumber" },
+                "backtracking": { "type": "boolean" },
+                "step_init": { "$ref": "#/definitions/positiveNumber" },
+                "step_min": { "$ref": "#/definitions/positiveNumber" },
+                "step_max": { "$ref": "#/definitions/positiveNumber" },
+                "beta": { "$ref": "#/definitions/strictProbability" },
+                "momentum": { "type": "number", "minimum": 0.0, "exclusiveMaximum": 1.0 }
+              }
+            },
+            "slsqp": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "max_iter": { "$ref": "#/definitions/positiveInteger" },
+                "ftol": { "$ref": "#/definitions/positiveNumber" },
+                "eps": { "$ref": "#/definitions/positiveNumber" },
+                "disp": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "forecast": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "wf": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "kappa": { "$ref": "#/definitions/positiveNumber" },
+            "dirichlet_kappa": { "$ref": "#/definitions/positiveNumber" },
+            "jitter_floor": { "$ref": "#/definitions/positiveNumber" },
+            "selection": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enable": { "type": "boolean" },
+                "enabled": { "type": "boolean" },
+                "prior_sd": { "$ref": "#/definitions/positiveNumber" },
+                "prior_mean": { "type": "number" },
+                "lower": { "type": "number" },
+                "upper": { "type": "number" },
+                "positivity": { "type": "string", "enum": ["none", "nonneg"] },
+                "clip": { "$ref": "#/definitions/twoNumberArray" }
+              }
+            }
+          }
+        },
+        "particles": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "num": { "$ref": "#/definitions/positiveInteger" },
+                "ness_threshold": { "$ref": "#/definitions/strictProbability" },
+                "resample_method": { "type": "string", "enum": ["systematic", "stratified", "multinomial"] },
+                "jitter_after_resample": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "eps": { "$ref": "#/definitions/positiveNumber" },
+                    "strength": { "$ref": "#/definitions/positiveNumber" }
+                  }
+                },
+                "min_prop_floor": { "$ref": "#/definitions/positiveNumber" },
+                "log_weight_clip": { "$ref": "#/definitions/positiveNumber" },
+                "seed": { "$ref": "#/definitions/nonNegativeInteger" }
+              }
+            },
+            { "$ref": "#/definitions/positiveInteger" }
+          ]
+        },
+        "pf": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "num_particles": { "$ref": "#/definitions/positiveInteger" },
+            "resample_criterion": { "type": "string", "enum": ["ness"] },
+            "ness_threshold": { "$ref": "#/definitions/strictProbability" },
+            "resampling": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": { "method": { "type": "string", "enum": ["systematic", "stratified", "multinomial"] } }
+            },
+            "loglik_stabilization_eps": { "$ref": "#/definitions/positiveNumber" },
+            "seed": { "$ref": "#/definitions/nonNegativeInteger" }
+          }
+        },
+        "emission": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "model": { "type": "string" },
+                "eps": { "$ref": "#/definitions/positiveNumber" }
+              }
+            }
+          ]
+        },
+        "smoother": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "method": { "type": "string", "enum": ["entropic_mirror_descent", "mirror_descent"] },
+            "max_iters": { "$ref": "#/definitions/positiveInteger" },
+            "steps": { "$ref": "#/definitions/positiveInteger" },
+            "step_size": { "$ref": "#/definitions/positiveNumber" },
+            "step_decay": { "$ref": "#/definitions/strictProbability" },
+            "momentum": { "type": "number", "minimum": 0.0, "exclusiveMaximum": 1.0 },
+            "tol": { "$ref": "#/definitions/positiveNumber" }
+          }
+        },
+        "predictive": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "tplus1": { "type": "boolean" },
+            "draws": { "$ref": "#/definitions/positiveInteger" },
+            "posterior_predictive_draws": { "$ref": "#/definitions/positiveInteger" },
+            "pit_bins": { "$ref": "#/definitions/positiveInteger" },
+            "waic": { "type": "boolean" },
+            "loo_approx": { "type": "boolean" },
+            "baseline": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "method": { "type": "string", "enum": ["iid", "random_walk", "none"] }
+              }
+            },
+            "coverage_levels": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/strictProbability" },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "ci_levels": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/strictProbability" },
+              "minItems": 1
+            },
+            "quantiles": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 1
+            }
+          }
+        },
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "ness_median_min": { "$ref": "#/definitions/strictProbability" },
+            "ness_low_fraction_max": { "$ref": "#/definitions/strictProbability" }
+          }
+        },
+        "mode": { "type": "string" },
+        "resample_ess_frac": { "$ref": "#/definitions/strictProbability" },
+        "Ne": { "$ref": "#/definitions/positiveNumber" },
+        "selection": { "type": "boolean" },
+        "jitter": { "$ref": "#/definitions/positiveNumber" },
+        "ci_levels": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/strictProbability" }
+        }
+      }
+    },
+    "detection": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "e_values": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "min_prop": { "$ref": "#/definitions/probability" },
+            "tail": { "type": "string", "enum": ["greater", "less", "two_sided"] },
+            "alt": { "type": "string", "enum": ["greater", "less", "two_sided"] },
+            "clip_p_min": { "$ref": "#/definitions/numberLike" },
+            "mean_target_max": { "$ref": "#/definitions/numberLike" },
+            "smoothing_window_days": { "$ref": "#/definitions/positiveInteger" },
+            "calibrate": { "type": "boolean" },
+            "smoothing_window": { "$ref": "#/definitions/positiveInteger" },
+            "combine_method": { "type": "string", "enum": ["product", "sum", "mixture"] },
+            "truncation": { "$ref": "#/definitions/numberLike" },
+            "allowed_inflation": { "$ref": "#/definitions/numberLike" }
+          }
+        },
+        "multiple_testing": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "method": { "type": "string", "enum": ["eBH", "BH", "none"] },
+            "alpha": { "$ref": "#/definitions/strictProbability" },
+            "dependency": { "type": "string", "enum": ["arbitrary", "prds"] }
+          }
+        },
+        "e_bh": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "alpha": { "$ref": "#/definitions/strictProbability" },
+            "online": { "type": "boolean" },
+            "dependency": { "type": "string", "enum": ["arbitrary", "prds"] }
+          }
+        },
+        "shiryaev_roberts": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enable": { "type": "boolean" },
+            "threshold": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "method": { "type": "string", "enum": ["permutation", "fixed"] },
+                "false_alarm_rate": { "$ref": "#/definitions/strictProbability" },
+                "permutations": { "$ref": "#/definitions/positiveInteger" },
+                "block_size_days": { "$ref": "#/definitions/positiveInteger" },
+                "by_site": { "type": "boolean" },
+                "seed": { "$ref": "#/definitions/nonNegativeInteger" }
+              }
+            },
+            "min_gap_between_calls_days": { "$ref": "#/definitions/positiveInteger" }
+          }
+        },
+        "sr": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "threshold_quantile": { "$ref": "#/definitions/strictProbability" },
+            "prior_r0": { "$ref": "#/definitions/nonNegativeNumber" },
+            "block_permutations": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "num_permutations": { "$ref": "#/definitions/positiveInteger" },
+                "block_size": { "$ref": "#/definitions/positiveInteger" },
+                "min_blocks": { "$ref": "#/definitions/positiveInteger" }
+              }
+            }
+          }
+        },
+        "calibration": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "null_permutations": { "$ref": "#/definitions/positiveInteger" },
+            "by_site": { "type": "boolean" },
+            "mean_evalue_upper": { "$ref": "#/definitions/positiveNumber" },
+            "null_mean_tolerance": { "$ref": "#/definitions/positiveNumber" },
+            "fdr_target": { "$ref": "#/definitions/strictProbability" },
+            "leadtime_reference_path": { "type": ["string", "null"] }
+          }
+        },
+        "reporting": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "export_timelines": { "type": "boolean" },
+            "min_leadtime_days": { "$ref": "#/definitions/nonNegativeInteger" }
+          }
+        },
+        "alpha_fdr": { "$ref": "#/definitions/strictProbability" },
+        "min_support_days": { "$ref": "#/definitions/positiveInteger" },
+        "permutations": { "$ref": "#/definitions/positiveInteger" }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ppc": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "draws": { "$ref": "#/definitions/positiveInteger" },
+            "bins": { "$ref": "#/definitions/positiveInteger" },
+            "pit_bins": { "$ref": "#/definitions/positiveInteger" },
+            "residual_bins": { "$ref": "#/definitions/positiveInteger" },
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "levels": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/strictProbability" },
+              "minItems": 1
+            },
+            "nominal_levels": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/strictProbability" },
+              "minItems": 1
+            },
+            "tolerance": { "$ref": "#/definitions/strictProbability" },
+            "reliability_bins": { "$ref": "#/definitions/positiveInteger" },
+            "targets": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/strictProbability" }
+            }
+          }
+        },
+        "sbc": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "draws": { "$ref": "#/definitions/positiveInteger" },
+            "replicates": { "$ref": "#/definitions/positiveInteger" },
+            "bins": { "$ref": "#/definitions/positiveInteger" },
+            "ks_alpha": { "$ref": "#/definitions/strictProbability" },
+            "alpha": { "$ref": "#/definitions/strictProbability" },
+            "seed": { "$ref": "#/definitions/nonNegativeInteger" },
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "scoring": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "compute_crps": { "type": "boolean" },
+            "compute_rmse": { "type": "boolean" },
+            "compute_logscore": { "type": "boolean" },
+            "bootstrap_se": { "type": "boolean" },
+            "num_bootstrap": { "$ref": "#/definitions/positiveInteger" }
+          }
+        },
+        "acceptance_gates": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "ness_median_min": { "$ref": "#/definitions/strictProbability" },
+            "ness_low_fraction_max": { "$ref": "#/definitions/strictProbability" },
+            "evalue_mean_null_max": { "$ref": "#/definitions/positiveNumber" },
+            "coverage_95_within": { "$ref": "#/definitions/strictProbability" },
+            "deconv_decreasing_objective": { "type": "boolean" },
+            "theta_simplex_tol": { "$ref": "#/definitions/positiveNumber" },
+            "coverage_tolerance": { "$ref": "#/definitions/strictProbability" },
+            "sbc_p_min": { "$ref": "#/definitions/strictProbability" }
+          }
+        }
+      }
+    },
+    "benchmarks": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "external_tools": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "freyja": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": { "enable": { "type": "boolean" }, "cmd": { "type": "string" } }
+            },
+            "vaquero": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": { "enable": { "type": "boolean" }, "cmd": { "type": "string" } }
+            }
+          }
+        },
+        "baselines": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "glm": { "type": "boolean" }, "nmf": { "type": "boolean" } }
+        },
+        "fairness": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "coverage_quantiles": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/strictProbability" },
+              "minItems": 2
+            },
+            "site_size_bins": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/positiveInteger" },
+              "minItems": 2
+            },
+            "overlap_bins": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/probability" },
+              "minItems": 2
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "rmse": { "type": "boolean" }, "nll": { "type": "boolean" }, "jsd": { "type": "boolean" } }
+        },
+        "performance": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "runtime": { "type": "boolean" }, "memory": { "type": "boolean" } }
+        },
+        "seed": { "$ref": "#/definitions/nonNegativeInteger" },
+        "tools": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "freyja": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": { "enabled": { "type": "boolean" }, "path": { "type": ["string", "null"] } }
+            },
+            "vaquero": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": { "enabled": { "type": "boolean" }, "path": { "type": ["string", "null"] } }
+            },
+            "glm": { "type": "object", "additionalProperties": false, "properties": { "enabled": { "type": "boolean" } } },
+            "nmf": { "type": "object", "additionalProperties": false, "properties": { "enabled": { "type": "boolean" } } }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "reps": { "$ref": "#/definitions/positiveInteger" } }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "sensitivity": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "vary": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 1
+              }
+            },
+            "seeds": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/nonNegativeInteger" },
+              "minItems": 1
+            },
+            "param_perturbation_pct": { "$ref": "#/definitions/strictProbability" },
+            "num_grid": { "$ref": "#/definitions/positiveInteger" }
+          }
+        },
+        "jackknife": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "site_loo": { "type": "boolean" },
+            "leave_one_site_out": { "type": "boolean" }
+          }
+        },
+        "cross_validation": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "time": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "n_splits": { "$ref": "#/definitions/positiveInteger" },
+                "horizon_days": { "$ref": "#/definitions/positiveInteger" },
+                "gap_days": { "$ref": "#/definitions/positiveInteger" }
+              }
+            },
+            "site": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "n_splits": { "$ref": "#/definitions/positiveInteger" },
+                "test_frac": { "$ref": "#/definitions/strictProbability" },
+                "shuffle": { "type": "boolean" },
+                "seed": { "$ref": "#/definitions/nonNegativeInteger" }
+              }
+            }
+          }
+        },
+        "cv": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "time_folds": { "$ref": "#/definitions/positiveInteger" },
+            "site_folds": { "$ref": "#/definitions/positiveInteger" },
+            "shuffle": { "type": "boolean" }
+          }
+        },
+        "reproducibility": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "seeds": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/nonNegativeInteger" },
+              "minItems": 2
+            }
+          }
+        },
+        "external": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "reference_dates_csv": { "type": "string" },
+            "compute_leadtime": { "type": "boolean" },
+            "enabled": { "type": "boolean" },
+            "overlay_path": { "type": ["string", "null"] }
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "save_csv": { "type": "boolean" },
+            "save_parquet": { "type": "boolean" },
+            "save_figures": { "type": "boolean" },
+            "save_tables": { "type": "boolean" },
+            "save_intermediate": { "type": "boolean" },
+            "report": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "title": { "type": "string" },
+                "include_sections": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "reports": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "include_session_info": { "type": "boolean" },
+        "include_config_dump": { "type": "boolean" }
+      }
+    }
+  },
+  "required": []
+}

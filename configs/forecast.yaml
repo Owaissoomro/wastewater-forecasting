@@ -1,0 +1,26 @@
+forecast:
+  enabled: true
+  wf:
+    dirichlet_kappa: 200.0
+    selection:
+      enabled: false
+      prior_mean: 0.0
+      prior_sd: 0.05
+  pf:
+    num_particles: 128
+    resample_criterion: ness
+    ness_threshold: 0.5
+    resampling:
+      method: systematic
+    seed: 12345
+  smoother:
+    method: entropic_mirror_descent
+    steps: 200
+    step_size: 0.5
+    tol: 1.0e-07
+  predictive:
+    tplus1: true
+    posterior_predictive_draws: 100
+    pit_bins: 20
+    waic: false
+    loo_approx: false
