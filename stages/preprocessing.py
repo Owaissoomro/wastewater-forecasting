@@ -20,7 +20,6 @@ from matplotlib.ticker import LogLocator
 from utils.run import RunContext
 from utils.plotting import set_matplotlib_style, place_legend_below, categorical_palette, continuous_cmap
 
-# Optional seaborn (palettes); gracefully fall back if not present
 try:
     import seaborn as sns
     HAS_SEABORN = True
@@ -415,7 +414,7 @@ def compute_af_censor_filter(
         ),
     )
 
-    # KEEP-ALL: observed AF is retained exactly; nothing is censored
+    # observed AF is retained exactly; nothing is censored
     df["af_obs"] = df["af"]
     df["af_censored"] = False
 
@@ -435,7 +434,7 @@ def compute_af_censor_filter(
           .sort_values(["site_id", "date"])
     )
 
-    # LOD summary (for info only; nothing dropped or censored here)
+    # LOD summary 
     lod_summary = (
         df.groupby(["site_id", "date"])
           .agg(
@@ -532,7 +531,7 @@ def compute_missingness(
     else:
         mutations = sorted(df["mutation"].astype(str).unique().tolist())
 
-    # All zeros (float) → KEEP-ALL mode
+    # All zeros (float) -  KEEP-ALL mode
     miss_heat = pd.DataFrame(0.0, index=sites, columns=mutations)
 
     return miss_summary, miss_heat
@@ -613,24 +612,50 @@ def compute_bias_loci(
 
     return out
 
-def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
+def bias_loci_figure(bias_df: pd.DataFrame) -> "plt.Figure":
     """
-    Bias‑loci diagnostics with a **shared legend baked UNDER the panels** (no overlap/clipping).
+    Plot bias-loci diagnostics with a **deeper legend zone below the panels** and
+    extra spacing for headings/labels.
 
-    Layout:
-      ┌───────────────┬───────────────┐
-      │   Panel A     │   Panel B     │   ← main plots
-      └───────────────┴───────────────┘
-      ┌───────────────────────────────┐
-      │           LEGEND              │   ← dedicated legend row
-      └───────────────────────────────┘
+    Parameters
+    ----------
+    bias_df : pandas.DataFrame
+        Row-wise diagnostics per mutation/locus. Expected columns:
+        Panel A (dropout):
+          - 'median_coverage' (float, >0): per-mutation median coverage
+          - 'coverage_ratio_to_global' (float, >0): ratio to global median coverage
+          - 'flag_dropout' (bool): dropout flag
+          - 'dropout_threshold' (float): vertical cutoff (drawn if finite)
+          - 'global_median_coverage' (float): vertical reference (drawn if finite)
+        Panel B (reference bias):
+          - 'median_coverage' (float, >0): per-mutation median coverage (reused)
+          - 'af_pos_rate_highcov' (float in [0,1]): positive AF rate at high coverage
+          - 'flag_ref_bias' (bool): reference-bias flag
+          - 'highcov_threshold' (float): vertical cutoff (drawn if finite)
+        Optional:
+          - 'ref_bias_threshold' (float in [0,1]): horizontal reference (drawn if finite)
 
-    Expects columns:
-      Panel A: median_coverage, coverage_ratio_to_global, flag_dropout,
-               dropout_threshold, global_median_coverage
-      Panel B: median_coverage, af_pos_rate_highcov, flag_ref_bias,
-               highcov_threshold
-      Optional: ref_bias_threshold
+    Returns
+    -------
+    matplotlib.figure.Figure
+        A 2×1 grid of panels (A: dropout, B: reference bias) with a dedicated
+        **spacer row** and a **legend row** placed well below the panels so the
+        legend never overlaps or clips. The legend is part of the canvas, so you
+        can save without `bbox_extra_artists` tricks.
+
+    Notes
+    -----
+    * Panel A uses **log–log** axes; Panel B uses **log-x, linear-y**.
+      Non-positive values for log axes are safely clipped to a small ε.
+    * Threshold lines are drawn only when the corresponding column contains a
+      finite value (first non-NaN is used as the display value).
+    * The function is headless-safe: markers are rasterized to keep PDFs/SVGs
+      light; titles/labels have extra padding for readability.
+
+    Example
+    -------
+    >>> fig = bias_loci_figure(bias_df)
+    >>> fig.savefig("bias_loci.png", dpi=200)
     """
     import numpy as np
     import matplotlib.pyplot as plt
@@ -640,9 +665,9 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
 
     # ------- Guards & required columns -------
     if bias_df is None or len(bias_df) == 0:
-        fig, ax = plt.subplots(figsize=(12, 5.8))
+        fig, ax = plt.subplots(figsize=(12.8, 7.8))
         ax.axis("off")
-        ax.text(0.5, 0.5, "No bias‑loci diagnostics available", ha="center", va="center")
+        ax.text(0.5, 0.5, "No bias-loci diagnostics available", ha="center", va="center")
         return fig
 
     df = bias_df.copy()
@@ -652,7 +677,7 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
              "highcov_threshold"]
     missing = [c for c in (req_a + req_b) if c not in df.columns]
     if missing:
-        fig, ax = plt.subplots(figsize=(12, 5.8))
+        fig, ax = plt.subplots(figsize=(12.8, 7.8))
         ax.axis("off")
         ax.text(0.5, 0.5, "Missing required columns:\n" + ", ".join(missing),
                 ha="center", va="center")
@@ -662,6 +687,7 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
     EPS = 1e-6
 
     def _log_limits(v: np.ndarray) -> tuple[float, float]:
+        """Tight but safe log limits (1st–99th pct if enough data) with ε clipping."""
         vv = np.asarray(v, dtype=float)
         vv = vv[np.isfinite(vv) & (vv > 0)]
         if vv.size == 0:
@@ -675,35 +701,38 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
         hi = max(lo * 1.01, hi * 1.10)
         return (lo, hi)
 
-    # Typed/clean views
-    medcov      = df["median_coverage"].astype(float).to_numpy()
-    covratio    = df["coverage_ratio_to_global"].astype(float).to_numpy()
-    posrate     = df["af_pos_rate_highcov"].astype(float).to_numpy()
+    # Typed views
+    medcov       = df["median_coverage"].astype(float).to_numpy()
+    covratio     = df["coverage_ratio_to_global"].astype(float).to_numpy()
+    posrate      = df["af_pos_rate_highcov"].astype(float).to_numpy()
     flag_dropout = df["flag_dropout"].fillna(False).astype(bool).to_numpy()
     flag_refbias = df["flag_ref_bias"].fillna(False).astype(bool).to_numpy()
 
-    # Thresholds (safe fallbacks)
+    # Thresholds (first non-NaN if present; else fallback)
     get1 = lambda col, default=np.nan: float(df[col].dropna().iloc[0]) \
         if col in df and df[col].notna().any() else float(default)
-    dropout_thr = get1("dropout_threshold", 1.0)
-    global_med  = get1("global_median_coverage", np.nan)
-    highcov_thr = get1("highcov_threshold", 10.0)
+    dropout_thr  = get1("dropout_threshold", 1.0)
+    global_med   = get1("global_median_coverage", np.nan)
+    highcov_thr  = get1("highcov_threshold", 10.0)
     ref_bias_thr = get1("ref_bias_threshold", np.nan)
 
-    # ------- Figure with dedicated bottom legend row -------
-    fig = plt.figure(figsize=(12.4, 6.6))
+    # ------- Figure (main panels + white spacer + deep legend) -------
+    fig = plt.figure(figsize=(12.8, 7.8))
     gs = fig.add_gridspec(
-        nrows=2, ncols=2,
-        height_ratios=[1.0, 0.26],   # bottom row reserved for the legend
+        nrows=3, ncols=2,
+        height_ratios=[1.00, 0.20, 0.36],   # main panels, spacer (white), legend
         width_ratios=[1.0, 1.0],
-        left=0.06, right=0.99, bottom=0.06, top=0.90,
-        hspace=0.18, wspace=0.12
+        left=0.07, right=0.99, bottom=0.06, top=0.92,  # extra headroom for suptitle
+        hspace=0.22, wspace=0.14
     )
-    ax1   = fig.add_subplot(gs[0, 0])
-    ax2   = fig.add_subplot(gs[0, 1])
-    legax = fig.add_subplot(gs[1, :]); legax.axis("off")
+    ax1    = fig.add_subplot(gs[0, 0])
+    ax2    = fig.add_subplot(gs[0, 1])
+    spacer = fig.add_subplot(gs[1, :]); spacer.axis("off")
+    legax  = fig.add_subplot(gs[2, :]); legax.axis("off")
 
-    fig.suptitle("Bias Loci Diagnostics — Dropout vs Reference Bias", fontsize=14)
+    # Suptitle with generous spacing from panels
+    fig.suptitle("Bias Loci Diagnostics — Dropout vs Reference Bias",
+                 fontsize=15, y=0.975)
 
     # ------- Panel A: Amplicon dropout (log–log) -------
     ax1.set_xscale("log"); ax1.set_yscale("log")
@@ -713,7 +742,7 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
     ax1.scatter(xA[~flag_dropout], yA[~flag_dropout],
                 s=20, alpha=0.80, color="skyblue", label="Normal (dropout)", rasterized=True)
     ax1.scatter(xA[flag_dropout],  yA[flag_dropout],
-                s=28, alpha=0.95, color="crimson",  label="Dropout‑flagged", rasterized=True)
+                s=28, alpha=0.95, color="crimson",  label="Dropout-flagged", rasterized=True)
 
     if np.isfinite(dropout_thr):
         ax1.axvline(max(EPS, dropout_thr), ls="--", lw=1.5, color="black",
@@ -725,10 +754,11 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
 
     xlo, xhi = _log_limits(xA); ylo, yhi = _log_limits(yA)
     ax1.set_xlim(xlo, xhi); ax1.set_ylim(ylo, yhi)
-    ax1.set_title("A. Amplicon dropout detection")
-    ax1.set_xlabel("Per‑mutation median coverage")
-    ax1.set_ylabel("Coverage ratio to global median")
+    ax1.set_title("A. Amplicon dropout detection", pad=10)
+    ax1.set_xlabel("Per-mutation median coverage (log scale)", labelpad=7)
+    ax1.set_ylabel("Coverage ratio to global median (log scale)", labelpad=7)
     ax1.grid(True, which="both", ls=":", alpha=0.4)
+    ax1.tick_params(length=3)
 
     # ------- Panel B: Reference bias (x log, y linear) -------
     ax2.set_xscale("log")
@@ -736,31 +766,32 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
     yB = np.clip(posrate, 0.0, 1.0)
 
     ax2.scatter(xB[~flag_refbias], yB[~flag_refbias],
-                s=20, alpha=0.80, color="seagreen",   label="Normal (ref‑bias)", rasterized=True)
+                s=20, alpha=0.80, color="seagreen",   label="Normal (ref-bias)", rasterized=True)
     ax2.scatter(xB[flag_refbias],  yB[flag_refbias],
-                s=28, alpha=0.95, color="darkorange", label="Ref‑bias flagged", rasterized=True)
+                s=28, alpha=0.95, color="darkorange", label="Ref-bias flagged", rasterized=True)
 
     if np.isfinite(highcov_thr):
         ax2.axvline(max(EPS, highcov_thr), ls="--", lw=1.5, color="black",
-                    label=f"High‑cov cutoff = {highcov_thr:.0f}")
+                    label=f"High-cov cutoff = {highcov_thr:.0f}")
     if np.isfinite(ref_bias_thr):
         ax2.axhline(ref_bias_thr, ls=":", lw=1.2, color="gray",
-                    label=f"Ref‑bias threshold = {ref_bias_thr:.3f}")
+                    label=f"Ref-bias threshold = {ref_bias_thr:.3f}")
 
     xb_lo, xb_hi = _log_limits(xB)
     ax2.set_xlim(xb_lo, xb_hi)
     ax2.set_ylim(-0.02, 1.02)
-    ax2.set_title("B. Reference‑bias detection")
-    ax2.set_xlabel("Per‑mutation median coverage (log scale)")
-    ax2.set_ylabel("Positive AF rate (high coverage)")
+    ax2.set_title("B. Reference-bias detection", pad=10)
+    ax2.set_xlabel("Per-mutation median coverage (log scale)", labelpad=7)
+    ax2.set_ylabel("Positive AF rate (high coverage)", labelpad=7)
     ax2.grid(True, which="both", ls=":", alpha=0.4)
+    ax2.tick_params(length=3)
 
-    # ------- Shared legend centered UNDER the panels -------
+    # ------- Shared legend centered well below -------
     legend_handles = [
         Patch(facecolor="skyblue",   edgecolor="none", label="Normal (dropout)"),
-        Patch(facecolor="crimson",   edgecolor="none", label="Dropout‑flagged"),
-        Patch(facecolor="seagreen",  edgecolor="none", label="Normal (ref‑bias)"),
-        Patch(facecolor="darkorange",edgecolor="none", label="Ref‑bias flagged"),
+        Patch(facecolor="crimson",   edgecolor="none", label="Dropout-flagged"),
+        Patch(facecolor="seagreen",  edgecolor="none", label="Normal (ref-bias)"),
+        Patch(facecolor="darkorange",edgecolor="none", label="Ref-bias flagged"),
     ]
     legax.legend(
         legend_handles,
@@ -768,27 +799,37 @@ def bias_loci_figure(bias_df: pd.DataFrame) -> plt.Figure:
         loc="center",
         ncol=2,
         frameon=True, fancybox=True, framealpha=0.94,
-        borderpad=0.6, handlelength=1.6, handletextpad=0.6, columnspacing=1.2
+        borderpad=0.8, handlelength=1.8, handletextpad=0.7, columnspacing=1.4
     )
 
-    # No need for bbox tricks on save — legend is part of the figure canvas.
     return fig
+
 
 # ---------------------------
 # Figures
 # ---------------------------
 def coverage_panel_figure(df: pd.DataFrame, ridgeline_sites_max: int) -> plt.Figure:
     """
-    Coverage panel with two views and a dedicated legend row UNDER the plots:
+    Coverage panel with (A) a global **log-scale** distribution (histogram + properly
+    transformed KDE) and (B) **per-site horizontal violins** on a shared log-x axis.
+    The legend is on its own bottom row, so exports never overlap/clip. Site names
+    are shown as **y-axis tick labels** (not text annotations), so they’re readable.
 
-      (A) Global coverage distribution — normalized histogram + continuous KDE
-      (B) Site-wise ridgeline densities — all scaled to a common peak height
+    Expected columns
+    ----------------
+    df['coverage'] : numeric (>=0), per-row coverage
+    df['site_id']  : string-like, site identifier
 
-    The legend lives on its own axes (bottom row), so exported PNGs never overlap/clip.
+    Notes
+    -----
+    * Panel A uses log-spaced bins and a KDE computed in log10(coverage) with a
+      correct change-of-variables (divide by x*ln(10)) so the density matches the
+      histogram on the original x-scale.
+    * Panel B draws a violin per site by mirroring each site’s density (also
+      transformed back to the original x-scale) around the site’s y-position.
     """
     import numpy as np
     import matplotlib.pyplot as plt
-    from matplotlib.gridspec import GridSpec
     from matplotlib.patches import Patch
     from matplotlib.lines import Line2D
     from scipy.stats import gaussian_kde
@@ -797,169 +838,192 @@ def coverage_panel_figure(df: pd.DataFrame, ridgeline_sites_max: int) -> plt.Fig
 
     # ---------- Guards ----------
     if df is None or df.empty or ("coverage" not in df.columns) or ("site_id" not in df.columns):
-        fig, ax = plt.subplots(figsize=(11.6, 6.0))
+        fig, ax = plt.subplots(figsize=(12.2, 7.8))
         ax.axis("off")
         ax.text(0.5, 0.5, "No coverage data available", ha="center", va="center")
         return fig
 
-    # ---------- Figure & layout: 2 plot rows + 1 legend row ----------
-    fig = plt.figure(figsize=(11.8, 8.6))
+    # ---------- Figure: 2 plot rows + 1 legend row ----------
+    fig = plt.figure(figsize=(12.4, 8.8))
     gs = fig.add_gridspec(
         nrows=3, ncols=1,
-        height_ratios=[1.15, 1.0, 0.24],   # bottom row reserved for legend
-        left=0.06, right=0.99, bottom=0.06, top=0.90, hspace=0.36
+        height_ratios=[1.05, 1.15, 0.26],   # bottom row reserved for legend
+        left=0.07, right=0.99, bottom=0.06, top=0.94, hspace=0.36
     )
-    ax_hist = fig.add_subplot(gs[0, 0])
-    ax_ridge = fig.add_subplot(gs[1, 0])
-    leg_ax  = fig.add_subplot(gs[2, 0]); leg_ax.axis("off")
+    ax_hist  = fig.add_subplot(gs[0, 0])
+    ax_sites = fig.add_subplot(gs[1, 0])
+    leg_ax   = fig.add_subplot(gs[2, 0]); leg_ax.axis("off")
 
-    fig.suptitle("Coverage Panel — Global vs Site‑Level Distributions", fontsize=13)
+    fig.suptitle("Coverage Panel — Global vs Per-Site Distributions", fontsize=14, y=0.975)
 
-    # ---------- (A) Global distribution ----------
-    cov = df["coverage"].to_numpy(dtype=float)
-    cov = cov[np.isfinite(cov) & (cov >= 0)]
+    # ---------- (A) Global distribution (log x) ----------
+    cov_all = pd.to_numeric(df["coverage"], errors="coerce").to_numpy(float)
+    cov_all = cov_all[np.isfinite(cov_all)]
+    cov_pos = cov_all[cov_all > 0.0]
+    zeros   = int((cov_all <= 0.0).sum())
+
     show_hist = False
     show_kde  = False
 
-    if cov.size == 0:
+    if cov_pos.size == 0:
         ax_hist.axis("off")
-        ax_hist.text(0.5, 0.5, "No valid coverage values", ha="center", va="center")
+        ax_hist.text(0.5, 0.5, "No positive coverage values", ha="center", va="center")
     else:
-        # Robust x‑limit
-        x_max = float(np.nanpercentile(cov, 99.5))
-        x_max = max(x_max, 1.0)
+        # Robust domain (1st–99.5th pct), ensure spread
+        lo = float(np.nanpercentile(cov_pos, 1.0))
+        hi = float(np.nanpercentile(cov_pos, 99.5))
+        lo = max(lo, 1e-3)
+        if not np.isfinite(hi) or hi <= lo:
+            hi = lo * 1.25
 
-        # Bin count: Freedman–Diaconis (fallback to sqrt(n))
-        q25, q75 = np.percentile(cov, [25, 75])
-        iqr = max(q75 - q25, 0.0)
-        if iqr > 0:
-            binw = 2.0 * iqr * (cov.size ** (-1.0 / 3.0))
-            bins = int(np.clip(np.ceil((x_max - 0.0) / max(binw, 1e-9)), 10, 60))
-        else:
-            bins = min(60, max(10, int(np.sqrt(cov.size))))
-
-        # Histogram (density)
+        # Log-spaced bins (density=True to compare against KDE properly transformed)
+        bins = np.logspace(np.log10(lo), np.log10(hi), 50)
         ax_hist.hist(
-            cov, bins=bins, range=(0.0, x_max), density=True,
-            alpha=0.55, color="steelblue", edgecolor="none", label="Histogram (normalized)"
+            cov_pos, bins=bins, density=True,
+            alpha=0.55, color="steelblue", edgecolor="none", label="Histogram (log bins)"
         )
         show_hist = True
 
-        # KDE if there is variance
-        if np.std(cov) > 0:
-            xgrid = np.linspace(0.0, x_max, 512)
-            try:
-                kde = gaussian_kde(cov)
-                ax_hist.plot(xgrid, kde(xgrid), lw=2.0, color="black", label="KDE (density)")
-                show_kde = True
-            except Exception:
-                pass
+        # KDE in log-domain with change-of-variables back to x
+        logs = np.log10(cov_pos)
+        xgrid_log = np.linspace(np.log10(lo), np.log10(hi), 512)
+        try:
+            kde = gaussian_kde(logs)
+            dens_log = kde(xgrid_log)  # density wrt log10(x)
+            xgrid = 10.0 ** xgrid_log
+            dens  = dens_log / (np.log(10.0) * xgrid)  # f_X(x) = f_Z(z)/(x*ln 10)
+            ax_hist.plot(xgrid, dens, lw=2.0, color="black", label="KDE (density)")
+            show_kde = True
+        except Exception:
+            pass
 
-        ax_hist.set_xlim(0.0, x_max)
-        ax_hist.set_title("A. Global Coverage Distribution", fontsize=11)
-        ax_hist.set_xlabel("Coverage")
-        ax_hist.set_ylabel("Probability density")
-        ax_hist.grid(True, ls=":", alpha=0.4)
+        ax_hist.set_xscale("log")
+        ax_hist.set_xlim(lo, hi)
+        ax_hist.set_title("A. Global Coverage (log scale)", fontsize=12, pad=8)
+        ax_hist.set_xlabel("Coverage (log)", labelpad=6)
+        ax_hist.set_ylabel("Probability density", labelpad=6)
+        if zeros > 0:
+            ax_hist.annotate(f"{zeros} zeros not shown", xy=(0.98, 0.92), xycoords="axes fraction",
+                             ha="right", va="top", fontsize=8, color="0.45")
+        ax_hist.grid(True, which="both", ls=":", alpha=0.4)
 
-    # ---------- (B) Ridgeline per site ----------
+    # ---------- (B) Per-site horizontal violins (log x) ----------
+    # Prepare sites
     sites = sorted(map(str, df["site_id"].dropna().astype(str).unique()))
     if len(sites) > ridgeline_sites_max:
         sites = sites[:ridgeline_sites_max]
 
-    all_vals = df["coverage"].to_numpy(dtype=float)
-    all_vals = all_vals[np.isfinite(all_vals) & (all_vals >= 0)]
-    if all_vals.size == 0:
-        ax_ridge.axis("off")
-        ax_ridge.text(0.5, 0.5, "No coverage values per site", ha="center", va="center")
+    if len(sites) == 0 or cov_pos.size == 0:
+        ax_sites.axis("off")
+        ax_sites.text(0.5, 0.5, "No coverage values per site", ha="center", va="center")
     else:
-        xgrid_r = np.linspace(0.0, float(np.nanpercentile(all_vals, 99.0)), 400)
-        xgrid_r[-1] = max(xgrid_r[-1], 1.0)
+        # Use same x-domain as panel A for consistency
+        lo = float(np.nanpercentile(cov_pos, 1.0))
+        hi = float(np.nanpercentile(cov_pos, 99.5))
+        lo = max(lo, 1e-3)
+        if not np.isfinite(hi) or hi <= lo:
+            hi = lo * 1.25
+
+        xgrid_log = np.linspace(np.log10(lo), np.log10(hi), 400)
+        xgrid = 10.0 ** xgrid_log
 
         colors = categorical_palette(len(sites))
-        site_densities = []
-        global_ymax = 1e-12
+        global_max = 1e-12
+        site_dens = []
 
+        # Compute site densities in log-domain and transform back
         for site in sites:
-            vals = df.loc[df["site_id"].astype(str) == site, "coverage"].to_numpy(dtype=float)
-            vals = vals[np.isfinite(vals) & (vals > 0)]
-            if vals.size < 2 or np.std(vals) == 0:
-                dens = np.zeros_like(xgrid_r)
-            else:
+            vals = pd.to_numeric(
+                df.loc[df["site_id"].astype(str) == site, "coverage"], errors="coerce"
+            ).to_numpy(float)
+            vals = vals[np.isfinite(vals) & (vals > 0.0)]
+            if vals.size >= 2 and np.std(vals) > 0:
                 try:
-                    kde = gaussian_kde(vals)
-                    dens = kde(xgrid_r)
+                    kde_s = gaussian_kde(np.log10(vals))
+                    dlog  = kde_s(xgrid_log)
+                    d     = dlog / (np.log(10.0) * xgrid)  # change-of-variables
                 except Exception:
-                    dens = np.zeros_like(xgrid_r)
-            site_densities.append((site, dens))
-            if dens.size:
-                global_ymax = max(global_ymax, float(np.max(dens)))
+                    d = np.zeros_like(xgrid)
+            else:
+                d = np.zeros_like(xgrid)
+            site_dens.append(d)
+            if d.size:
+                global_max = max(global_max, float(np.max(d)))
 
-        y_spacing = 1.0 / max(1, len(sites))
-        for i, (site, dens) in enumerate(site_densities):
-            y0 = i * y_spacing
-            color = colors[i % len(colors)]
-            scaled = (dens / (global_ymax + 1e-12)) * y_spacing * 0.8
-            ax_ridge.fill_between(xgrid_r, y0, y0 + scaled, color=color, alpha=0.5, lw=0)
-            ax_ridge.plot(xgrid_r, y0 + scaled, color=color, lw=1.0)
-            ax_ridge.text(xgrid_r[0], y0 + 0.02 * y_spacing, site,
-                          va="bottom", ha="left", fontsize=8)
+        # Draw horizontal violins centered at integer y positions
+        half_height = 0.42
+        for j, (site, d) in enumerate(zip(sites, site_dens)):
+            width = half_height * (d / (global_max + 1e-12))
+            y_upper = j + width
+            y_lower = j - width
+            color = colors[j % len(colors)]
+            ax_sites.fill_between(xgrid, y_lower, y_upper, alpha=0.5, lw=0, color=color)
+            ax_sites.plot(xgrid, y_upper, lw=0.8, color=color)
+            ax_sites.plot(xgrid, y_lower, lw=0.8, color=color)
 
-        ax_ridge.set_title("B. Coverage Ridgeline by Site", fontsize=11)
-        ax_ridge.set_xlabel("Coverage")
-        ax_ridge.set_yticks([])
-        ax_ridge.set_xlim(left=0.0, right=float(np.nanpercentile(all_vals, 99.5)))
-        ax_ridge.set_ylim(-0.02, 1.0)
-        ax_ridge.grid(True, axis="x", ls=":", alpha=0.3)
+        ax_sites.set_xscale("log")
+        ax_sites.set_xlim(lo, hi)
+        ax_sites.set_ylim(-0.6, len(sites) - 1 + 0.6)
+        ax_sites.set_yticks(range(len(sites)))
+        ax_sites.set_yticklabels(sites)
+        ax_sites.set_title("B. Per-Site Coverage (horizontal violins; log-x)", fontsize=12, pad=8)
+        ax_sites.set_xlabel("Coverage (log)", labelpad=6)
+        ax_sites.set_ylabel("Site", labelpad=6)
+        ax_sites.grid(True, axis="x", ls=":", alpha=0.3)
 
     # ---------- Dedicated legend UNDER the plots ----------
     legend_handles, legend_labels = [], []
     if show_hist:
         legend_handles.append(Patch(facecolor="steelblue", alpha=0.55, edgecolor="none"))
-        legend_labels.append("Histogram (normalized)")
+        legend_labels.append("Histogram (log bins)")
     if show_kde:
         legend_handles.append(Line2D([0], [0], color="black", lw=2.0))
         legend_labels.append("KDE (density)")
+    # Always include a violin example to explain panel B
+    legend_handles.append(Patch(facecolor="0.5", alpha=0.5, edgecolor="0.5"))
+    legend_labels.append("Per-site density (violins)")
 
-    # Always render the legend axis so it reserves space in PNGs
-    if legend_handles:
-        leg_ax.legend(
-            legend_handles, legend_labels,
-            loc="center",
-            ncol=len(legend_handles),
-            frameon=True, fancybox=True, framealpha=0.94,
-            borderpad=0.6, handlelength=1.8, handletextpad=0.6, columnspacing=1.2
-        )
-    else:
-        leg_ax.text(0.5, 0.5, "", ha="center", va="center")
+    leg_ax.legend(
+        legend_handles, legend_labels,
+        loc="center",
+        ncol=len(legend_handles),
+        frameon=True, fancybox=True, framealpha=0.94,
+        borderpad=0.6, handlelength=1.8, handletextpad=0.6, columnspacing=1.2
+    )
 
     return fig
 
+
 def missingness_heatmap_figure(miss_heat: pd.DataFrame, heatmap_mutations_max: int) -> plt.Figure:
     """
-    Missingness heatmap (sites × mutations), publication-ready, with a
-    dedicated bottom row for the colorbar so it is always UNDER the plot
-    (no overlap/clipping in saved PNGs).
+    Missingness heatmap (sites × mutations), publication-ready.
 
-    Guarantees
+    What’s improved here
+    --------------------
+    • **Vertical colorbar on the RIGHT** with numeric ticks (0.00 → 1.00).
+    • Clear axis headings: x = “Mutation”, y = “Site”.
+    • Deterministic row/column order; optional variance-based column down-select.
+    • True 0–1 scale (vmin=0, vmax=1), no autoscaling artifacts.
+    • Tick thinning for large matrices; subtle grid for small/medium matrices.
+    • Graceful empty input handling.
+
+    Parameters
     ----------
-    • True 0–1 scale (vmin=0, vmax=1) – no autoscaling artifacts
-    • Deterministic ordering of rows/cols
-    • Optional variance-based column down-selection (then stable alpha sort)
-    • Tick thinning to keep labels readable on large matrices
-    • Light cell gridlines for small/medium matrices
-    • Horizontal colorbar in its own axes below the heatmap
-    • Graceful handling of empty/degenerate inputs
+    miss_heat : pd.DataFrame
+        Index = sites, columns = mutations, values in [0,1] (missingness).
+    heatmap_mutations_max : int
+        If there are more than this many mutation columns, select the top-variance
+        columns (then alphabetically to stabilize).
     """
     import math
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
 
     set_matplotlib_style()
 
-    # ---------- Defensive copy & early exit ----------
     if miss_heat is None or (isinstance(miss_heat, pd.DataFrame) and miss_heat.empty):
-        # Even for empty, return a simple one-panel figure (no extra row needed)
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.axis("off")
         ax.text(0.5, 0.5, "No missingness matrix to display", ha="center", va="center")
@@ -967,7 +1031,6 @@ def missingness_heatmap_figure(miss_heat: pd.DataFrame, heatmap_mutations_max: i
 
     df = miss_heat.copy()
 
-    # Ensure index/columns are strings (prevents mixed-type tick issues)
     df.index = df.index.astype(str)
     df.columns = df.columns.astype(str)
     df = df.sort_index(axis=0)  # sites
@@ -978,7 +1041,6 @@ def missingness_heatmap_figure(miss_heat: pd.DataFrame, heatmap_mutations_max: i
     if (df.values.min() < 0.0) or (df.values.max() > 1.0):
         df = df.clip(lower=0.0, upper=1.0)
 
-    # ---------- Column down-selection by variance (then stable alpha sort) ----------
     if df.shape[1] > heatmap_mutations_max:
         variances = df.var(axis=0)
         means = df.mean(axis=0)
@@ -993,29 +1055,23 @@ def missingness_heatmap_figure(miss_heat: pd.DataFrame, heatmap_mutations_max: i
     n_rows, n_cols = int(df.shape[0]), int(df.shape[1])
 
     # ---------- Figure sizing ----------
-    # Scale sensibly with matrix size, with upper bounds; reserve a bottom row
-    # solely for the colorbar so it never overlaps tick labels in exported images.
-    fig_height = min(18.0, max(4.4, 0.28 * max(n_rows, 1) + 1.8))
-    fig_width  = min(22.0, max(8.6, 0.16 * max(n_cols, 1) + 6.2))
+    fig_height = min(18.0, max(4.6, 0.28 * max(n_rows, 1) + 1.8))
+    fig_width  = min(22.0, max(8.8, 0.16 * max(n_cols, 1) + 6.4))
     fig = plt.figure(figsize=(fig_width, fig_height))
 
-    # Two rows: heatmap (top), colorbar (bottom).
-    # Bottom row height is fixed proportion so even long x‑tick labels won’t collide.
     gs = fig.add_gridspec(
-        nrows=2, ncols=1,
-        height_ratios=[1.0, 0.20],   # dedicate ~20% height for cb + x‑tick labels
-        left=0.06, right=0.98, top=0.94, bottom=0.08, hspace=0.18
+        nrows=1, ncols=2,
+        width_ratios=[1.0, 0.055],   # narrow strip for colorbar
+        left=0.06, right=0.98, top=0.94, bottom=0.08, wspace=0.10
     )
     ax  = fig.add_subplot(gs[0, 0])
-    cax = fig.add_subplot(gs[1, 0])   # dedicated colorbar axes underneath
+    cax = fig.add_subplot(gs[0, 1])
 
-    # Colormap with graceful fallback
     try:
-        cmap = continuous_cmap("cet_fire")  # from utils.plotting if available
+        cmap = continuous_cmap("cet_fire")  
     except Exception:
         cmap = plt.cm.get_cmap("magma")
 
-    # ---------- Heatmap ----------
     im = ax.imshow(
         df.values,
         aspect="auto",
@@ -1025,12 +1081,10 @@ def missingness_heatmap_figure(miss_heat: pd.DataFrame, heatmap_mutations_max: i
         cmap=cmap,
     )
 
-    # Titles/labels
-    ax.set_title("Missingness heatmap (sites × mutations)")
-    ax.set_xlabel("Mutation")
-    ax.set_ylabel("Site")
+    ax.set_title("Missingness heatmap (sites × mutations)", pad=8)
+    ax.set_xlabel("Mutation", labelpad=6)
+    ax.set_ylabel("Site", labelpad=6)
 
-    # ---------- Tick thinning ----------
     def _thin_ticks(n: int, target: int = 36) -> np.ndarray:
         if n <= 0:
             return np.array([], dtype=int)
@@ -1044,57 +1098,61 @@ def missingness_heatmap_figure(miss_heat: pd.DataFrame, heatmap_mutations_max: i
 
     ax.set_xticks(xticks)
     ax.set_xticklabels([df.columns[i] for i in xticks],
-                       rotation=90, fontsize=7 if n_cols <= 120 else 6)
+                       rotation=90, fontsize=7 if n_cols <= 120 else 6, ha="center", va="top")
     ax.set_yticks(yticks)
     ax.set_yticklabels([df.index[i] for i in yticks],
                        fontsize=8 if n_rows <= 120 else 7)
 
-    # Short ticks; lighter frame
     ax.tick_params(length=3, width=0.8)
     for spine in ax.spines.values():
         spine.set_alpha(0.6)
 
-    # Optional gridlines for smaller matrices
     if n_rows * n_cols <= 60 * 60:
         ax.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
         ax.set_yticks(np.arange(-0.5, n_rows, 1), minor=True)
         ax.grid(which="minor", color="white", linestyle="-", linewidth=0.5, alpha=0.7)
         ax.tick_params(which="minor", bottom=False, left=False)
 
-    # ---------- Colorbar UNDER the heatmap (dedicated axes) ----------
-    # Placing it in cax guarantees it sits below the plot without overlapping.
-    cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
-    cbar.set_label("Missingness rate")
-    cbar_ticks = [0.0, 0.25, 0.5, 0.75, 1.0]
-    cbar.set_ticks(cbar_ticks)
-    cbar.ax.set_xticklabels([f"{t:.2f}" for t in cbar_ticks])
+    cbar = fig.colorbar(im, cax=cax, orientation="vertical")
+    cbar.set_label("Missingness rate", rotation=90, labelpad=8)
+    ticks = np.linspace(0.0, 1.0, 11) if n_rows <= 200 else np.linspace(0.0, 1.0, 5)
+    cbar.set_ticks(ticks)
+    cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda v, p: f"{v:.2f}"))
+    cbar.ax.tick_params(length=3)
 
-    # No tight_layout: geometry is fully controlled by GridSpec (prevents cb overlap).
     return fig
-
 def alt_ref_scatter_figure(
     df: pd.DataFrame,
     left_censor_af: float,
     label_suffix: Optional[str] = None
 ) -> plt.Figure:
     """
-    Alt (y) vs Ref (x) with a dedicated legend row UNDER the plot (no overlap/clipping in PNGs).
-    Keeps the math/overlays identical to your version; only the layout is changed.
+    Alt (y) vs Ref (x) scatter with (i) a **side stats panel** in its own column
+    and (ii) a **legend placed well below** the plot on a dedicated row – so no
+    overlap/clipping in saved PNGs. Math/overlays remain identical; only layout improves.
     """
     import math
     from collections import OrderedDict
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from scipy.stats import pearsonr, spearmanr
 
     set_matplotlib_style()
 
-    # ---- Figure: main plot (top) + legend row (bottom) ----
-    fig = plt.figure(figsize=(10.8, 6.8))
+    # ---- Figure: main plot (top-left), side stats (top-right), spacer, deep legend ----
+    fig = plt.figure(figsize=(12.4, 7.6))
     gs = fig.add_gridspec(
-        nrows=2, ncols=1,
-        height_ratios=[1.0, 0.24],  # bottom row reserved for legend
-        left=0.08, right=0.99, bottom=0.06, top=0.90, hspace=0.02
+        nrows=3, ncols=2,
+        height_ratios=[1.0, 0.12, 0.34],   # spacer + deep legend row → legend sits well below
+        width_ratios=[1.0, 0.38],          # right column reserved for stats panel
+        left=0.07, right=0.99, bottom=0.06, top=0.90,
+        hspace=0.16, wspace=0.16
     )
-    ax    = fig.add_subplot(gs[0, 0])
-    legax = fig.add_subplot(gs[1, 0]); legax.axis("off")
+    ax       = fig.add_subplot(gs[0, 0])
+    stat_ax  = fig.add_subplot(gs[0, 1]); stat_ax.axis("off")
+    spacer   = fig.add_subplot(gs[1, :]); spacer.axis("off")
+    legax    = fig.add_subplot(gs[2, :]); legax.axis("off")
 
     # ---------- Prepare counts (defensive coercion) ----------
     tmp = df.copy()
@@ -1108,10 +1166,12 @@ def alt_ref_scatter_figure(
     cov = tmp["coverage"].to_numpy(dtype=float)
 
     valid = np.isfinite(alt) & np.isfinite(ref) & np.isfinite(cov) & (alt >= 0) & (ref >= 0) & (cov >= 0)
+    suffix = "" if not label_suffix else f" – {label_suffix}"
+
     if not np.any(valid):
         ax.text(0.5, 0.5, "No valid counts", ha="center", va="center")
         ax.set_xlabel("Alt count"); ax.set_ylabel("Ref count")
-        fig.suptitle("Alt vs Ref counts" + ("" if not label_suffix else f" – {label_suffix}"), fontsize=13)
+        fig.suptitle("Alt vs Ref counts" + suffix, fontsize=13)
         return fig
 
     alt, ref, cov = alt[valid], ref[valid], cov[valid]
@@ -1127,9 +1187,15 @@ def alt_ref_scatter_figure(
     # ---------- AF isoclines: y = ((1-f)/f) * x ----------
     x = np.linspace(0, lim, 512)
     base_afs = [0.5, 0.1]
-    if left_censor_af and 0.0 < float(left_censor_af) < 1.0:
-        base_afs.append(float(left_censor_af))
-    iso_afs = sorted(set(f for f in base_afs if 0.0 < f < 1.0), reverse=True)
+    thr = None
+    try:
+        thr_val = float(left_censor_af)
+        if 0.0 < thr_val < 1.0:
+            base_afs.append(thr_val)
+            thr = thr_val
+    except Exception:
+        thr = None
+    iso_afs = sorted({f for f in base_afs if 0.0 < f < 1.0}, reverse=True)
 
     styles = ["--", ":", "-.", (0, (3, 1))]
     for i, f in enumerate(iso_afs):
@@ -1140,12 +1206,11 @@ def alt_ref_scatter_figure(
     if cov_pos.size:
         qs = np.quantile(cov_pos, [0.25, 0.5, 0.75, 0.90]).astype(float)
         qs = np.unique(np.clip(np.round(qs, 0), 1.0, None))  # dedup rounded
-        for c, style in zip(qs, ["-", "--", ":", "-."]):
-            xs = np.linspace(0, min(lim, c), 2)
-            ax.plot(xs, c - xs, style, lw=1.0, color="grey", alpha=0.95, label=f"Coverage = {c:.0f}")
+        for cval, style in zip(qs, ["-", "--", ":", "-."]):
+            xs = np.linspace(0, min(lim, cval), 2)
+            ax.plot(xs, cval - xs, style, lw=1.0, color="grey", alpha=0.95, label=f"Coverage = {cval:.0f}")
 
     # ---------- Axes, grid, cosmetics ----------
-    suffix = "" if not label_suffix else f" – {label_suffix}"
     ax.set_title(f"Alt vs Ref counts{suffix}")
     ax.set_xlabel("Alt count"); ax.set_ylabel("Ref count")
     ax.set_xlim(0, lim); ax.set_ylim(0, lim)
@@ -1155,7 +1220,7 @@ def alt_ref_scatter_figure(
     for spine in ax.spines.values():
         spine.set_alpha(0.6)
 
-    # ---------- Stats block (upper-right, out of the way) ----------
+    # ---------- Stats (computed as before) ----------
     K = float(np.sum(alt)); N = float(np.sum(cov)); p_hat = K / max(N, 1.0)
     z = 1.959963984540054
     if N > 0.0:
@@ -1179,7 +1244,7 @@ def alt_ref_scatter_figure(
     mask_hi = cov >= hi_thr
     if np.any(mask_hi):
         af_hi = np.divide(alt[mask_hi], np.maximum(cov[mask_hi], 1.0))
-        pos_rate_hi = float(np.mean(af_hi > float(left_censor_af)))
+        pos_rate_hi = float(np.mean(af_hi > thr)) if thr is not None else float("nan")
         zero_alt_hi = float(np.mean(alt[mask_hi] == 0.0))
     else:
         pos_rate_hi = float("nan"); zero_alt_hi = float("nan")
@@ -1199,21 +1264,36 @@ def alt_ref_scatter_figure(
     else:
         q25 = q50 = q75 = q90 = float("nan")
 
-    stats_text = (
-        f"Global AF p̂ = {p_hat:.4f}  (Wilson 95% CI: {ci_lo:.4f}–{ci_hi:.4f})\n"
-        f"Pearson r = {pear_r:+.3f}  (p={pear_p:.2g})   Spearman ρ = {spear_r:+.3f}  (p={spear_p:.2g})\n"
-        f"High-cov q70 = {hi_thr:.0f}  |  P(AF>{left_censor_af:.3f} | cov≥thr) = {pos_rate_hi:.3f}   zeros = {zero_alt_hi:.3f}\n"
-        f"Overdispersion φ_mom ≈ {phi_mom:.3f}\n"
-        f"Coverage: p25={q25:.0f}, p50={q50:.0f}, p75={q75:.0f}, p90={q90:.0f}"
-    )
-    ax.text(
-        0.98, 0.98, stats_text,
-        transform=ax.transAxes, ha="right", va="top",
-        fontsize=9, family="monospace",
-        bbox=dict(boxstyle="round,pad=0.35", facecolor="white", edgecolor="0.85", alpha=0.95)
+    # ---------- Stats panel on the RIGHT (own white space) ----------
+    stats_lines = [
+        f"Global AF  p̂  : {p_hat:.4f}",
+        f"Wilson 95% CI : [{ci_lo:.4f}, {ci_hi:.4f}]",
+        "",
+        f"Pearson r     : {pear_r:+.3f} (p={pear_p:.2g})",
+        f"Spearman ρ    : {spear_r:+.3f} (p={spear_p:.2g})",
+        "",
+        f"High-cov q70  : {hi_thr:.0f}",
+        (f"P(AF>{thr:.3f} | cov≥thr): {pos_rate_hi:.3f}" if thr is not None else "P(AF>thr | cov≥thr): —"),
+        f"Zero-alt rate : {zero_alt_hi:.3f}",
+        "",
+        f"Overdispersion φ_mom ≈ {phi_mom:.3f}",
+        "",
+        f"Coverage p25  : {q25:.0f}",
+        f"Coverage p50  : {q50:.0f}",
+        f"Coverage p75  : {q75:.0f}",
+        f"Coverage p90  : {q90:.0f}",
+    ]
+    # draw a soft background rectangle
+    stat_ax.add_patch(plt.Rectangle((0.0, 0.0), 1.0, 1.0,
+                                    transform=stat_ax.transAxes, fc="white",
+                                    ec="0.85", lw=1.0, alpha=0.98, zorder=-1))
+    stat_ax.text(
+        0.05, 0.95, "\n".join(stats_lines),
+        transform=stat_ax.transAxes, ha="left", va="top",
+        fontsize=9, family="monospace", color="black"
     )
 
-    # ---------- Legend UNDER the plot (boxed, deduped) ----------
+    # ---------- Legend WELL BELOW (boxed, deduped) ----------
     handles, labels = ax.get_legend_handles_labels()
     dedup = OrderedDict()
     for h, l in zip(handles, labels):
@@ -1226,7 +1306,7 @@ def alt_ref_scatter_figure(
             list(dedup.values()), list(dedup.keys()),
             loc="center", ncol=ncols,
             frameon=True, fancybox=True, framealpha=0.92,
-            borderpad=0.6, handletextpad=0.6, columnspacing=1.0
+            borderpad=0.8, handletextpad=0.7, columnspacing=1.2
         )
     else:
         legax.text(0.5, 0.5, "", ha="center", va="center")
@@ -1236,19 +1316,27 @@ def alt_ref_scatter_figure(
 
 def coverage_by_mutation_figure(df: pd.DataFrame) -> plt.Figure:
     """
-    Coverage per mutation with a dedicated legend row UNDER the plot (no overlap/clipping).
-    If seaborn is available, the CV colorbar is docked in a narrow slot to the right.
+    Coverage per mutation (Seaborn violins) with:
+      • a **vertical CV colorbar** docked to the right of the plot,
+      • a **statistics panel** in its own right-hand column, and
+      • a **legend well below** the plot on a dedicated bottom row.
+
+    Always uses seaborn (no fallbacks).
     """
     import math
-    import scipy.stats as st
-    from collections import OrderedDict
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    import scipy.stats as st  # used for skewness
 
     set_matplotlib_style()
 
     # ---------- Defensive copy & coercion ----------
     d = df.copy()
     if d.empty or "mutation" not in d.columns or "coverage" not in d.columns:
-        fig, ax = plt.subplots(figsize=(10.8, 6.2))
+        fig, ax = plt.subplots(figsize=(12.0, 6.6))
         ax.text(0.5, 0.5, "No data for coverage by mutation", ha="center", va="center")
         ax.set_axis_off()
         return fig
@@ -1270,7 +1358,7 @@ def coverage_by_mutation_figure(df: pd.DataFrame) -> plt.Figure:
     stats = stats.sort_values("median", ascending=True)
     order = stats.index.tolist()
     if not order:
-        fig, ax = plt.subplots(figsize=(10.8, 6.2))
+        fig, ax = plt.subplots(figsize=(12.0, 6.6))
         ax.text(0.5, 0.5, "No mutations after filtering", ha="center", va="center")
         ax.set_axis_off()
         return fig
@@ -1293,51 +1381,47 @@ def coverage_by_mutation_figure(df: pd.DataFrame) -> plt.Figure:
     if not np.isfinite(y_max) or y_max <= y_min:
         y_max = y_min + 1.0  # safe fallback
 
-    # ---------- Figure: plot (left) + cbar slot (right, top row), legend row (bottom) ----------
+    # ---------- Figure: main plot (left) + CV cbar (middle) + stats (right) + deep legend row ----------
     n = len(order)
     base_w = max(8.0, 0.18 * n + 6.0)
-    fig = plt.figure(figsize=(base_w + 3.2, 6.8))
+    fig = plt.figure(figsize=(base_w + 5.0, 7.8))
     gs = fig.add_gridspec(
-        nrows=2, ncols=2,
-        width_ratios=[1.0, 0.05], height_ratios=[1.0, 0.26],
-        left=0.05, right=0.99, bottom=0.06, top=0.90, wspace=0.18, hspace=0.02
+        nrows=3, ncols=3,
+        width_ratios=[1.0, 0.05, 0.38],     # plot, colorbar, stats panel
+        height_ratios=[1.0, 0.10, 0.34],    # spacer + deep legend row
+        left=0.05, right=0.99, bottom=0.06, top=0.92,
+        wspace=0.18, hspace=0.12
     )
-    ax    = fig.add_subplot(gs[0, 0])
-    cax   = fig.add_subplot(gs[0, 1])   # used only when seaborn is available
-    legax = fig.add_subplot(gs[1, :]); legax.axis("off")
+    ax     = fig.add_subplot(gs[0, 0])
+    cax    = fig.add_subplot(gs[0, 1])     # vertical CV colorbar
+    statax = fig.add_subplot(gs[0, 2]); statax.axis("off")  # side stats panel
+    spacer = fig.add_subplot(gs[1, :]); spacer.axis("off")
+    legax  = fig.add_subplot(gs[2, :]); legax.axis("off")
 
-    # ---------- Plot: violin (if seaborn) else boxplot ----------
-    if HAS_SEABORN:
-        sns.violinplot(
-            x="mutation", y="coverage", data=d, order=order, ax=ax,
-            inner=None, cut=0, bw="scott", color="lightsteelblue"
-        )
-        xs  = np.arange(n)
-        med = stats["median"].to_numpy()
-        cv  = stats["cv"].fillna(0.0).clip(0, 1.5).to_numpy()
-        sc = ax.scatter(
-            xs, med,
-            s=40 + 110 * np.clip(cv, 0, 1),
-            c=cv, cmap="viridis",
-            edgecolor="black", lw=0.3, zorder=3,
-            label="Median (size ∝ CV)"
-        )
-        # Dock the colorbar in the narrow slot (never overlaps legend)
-        cb = fig.colorbar(sc, cax=cax, orientation="vertical")
-        cb.set_label("Coefficient of variation (CV)")
-        ax.set_xticks(xs)
-        ax.set_xticklabels(order)
-    else:
-        data = [d.loc[d["mutation"] == m, "coverage"] for m in order]
-        bp = ax.boxplot(data, showfliers=False, patch_artist=True)
-        for patch, c in zip(bp["boxes"], categorical_palette(n)):
-            patch.set_facecolor(c); patch.set_alpha(0.55)
-        ax.set_xticks(np.arange(1, n + 1))
-        ax.set_xticklabels(order)
-        # Add a median marker so we still get a legend entry
-        med = stats["median"].to_numpy()
-        xs = np.arange(1, n + 1)
-        ax.scatter(xs, med, s=52, facecolor="white", edgecolor="black", lw=0.6, zorder=3, label="Median")
+    fig.suptitle("Coverage distribution per mutation", fontsize=14, y=0.985)
+
+    # ---------- Seaborn violins + median scatter (colored by CV, sized by CV) ----------
+    sns.violinplot(
+        x="mutation", y="coverage", data=d, order=order, ax=ax,
+        inner=None, cut=0, bw="scott", color="lightsteelblue"
+    )
+    xs  = np.arange(n)
+    med = stats["median"].to_numpy()
+    cv  = stats["cv"].fillna(0.0).clip(0, 1.5).to_numpy()
+    sc = ax.scatter(
+        xs, med,
+        s=40 + 110 * np.clip(cv, 0, 1),
+        c=cv, cmap="viridis",
+        edgecolor="black", lw=0.35, zorder=3,
+        label="Median (size ∝ CV, color = CV)"
+    )
+    # Dock the colorbar in the narrow slot
+    cb = fig.colorbar(sc, cax=cax, orientation="vertical")
+    cb.set_label("Coefficient of variation (CV)")
+
+    # Map the categorical positions to our xs for consistency
+    ax.set_xticks(xs)
+    ax.set_xticklabels(order)
 
     # ---------- Reference line & axes ----------
     ax.axhline(global_median, color="black", ls="--", lw=1.2, label=f"Global median = {global_median:.0f}")
@@ -1346,7 +1430,6 @@ def coverage_by_mutation_figure(df: pd.DataFrame) -> plt.Figure:
     ax.set_ylim(y_min, y_max)
     ax.set_xlabel("Mutation")
     ax.set_ylabel("Coverage (log scale)" if log_mode else "Coverage")
-    ax.set_title("Coverage distribution per mutation")
     ax.grid(True, axis="y", ls=":", alpha=0.4)
 
     # ---------- Tick label rotation & thinning ----------
@@ -1361,24 +1444,40 @@ def coverage_by_mutation_figure(df: pd.DataFrame) -> plt.Figure:
         lab.set_rotation(rot)
         lab.set_horizontalalignment("right")
 
-    # ---------- Global stats annotation ----------
-    summary = (
-        f"Global statistics:\n"
-        f"Median ± MAD = {global_median:.0f} ± {global_mad:.0f}\n"
-        f"Variance = {global_var:.1f}\n"
-        f"Skewness = {global_skew:+.2f}\n"
-        f"n_mutations = {n}"
-    )
-    ax.text(
-        0.995, 0.02, summary,
-        transform=ax.transAxes, ha="right", va="bottom",
-        fontsize=9, family="monospace",
-        bbox=dict(boxstyle="round,pad=0.32", facecolor="white", edgecolor="0.85", alpha=0.95)
+    # ---------- Stats panel (right column, own white space) ----------
+    # Soft white rectangle background
+    statax.add_patch(Rectangle((0.0, 0.0), 1.0, 1.0,
+                               transform=statax.transAxes, fc="white",
+                               ec="0.85", lw=1.0, alpha=0.98, zorder=-1))
+    # Build readable summary
+    n_sites = int(d.get("site_id", pd.Series(dtype=object)).nunique()) if "site_id" in d.columns else None
+    stats_lines = [
+        "Global summary",
+        "──────────────",
+        f"Median ± MAD : {global_median:.0f} ± {global_mad:.0f}",
+        f"Variance     : {global_var:.1f}",
+        f"Skewness     : {global_skew:+.2f}",
+        f"Mutations    : {n}",
+    ]
+    if n_sites is not None:
+        stats_lines.append(f"Sites        : {n_sites}")
+
+    stats_lines += [
+        "",
+        "Per-mutation ranges",
+        "──────────────",
+        f"Median (min–max): {np.nanmin(med):.0f}–{np.nanmax(med):.0f}",
+        f"CV (min–max)    : {np.nanmin(cv):.2f}–{np.nanmax(cv):.2f}",
+    ]
+    statax.text(
+        0.06, 0.94, "\n".join(stats_lines),
+        transform=statax.transAxes, ha="left", va="top",
+        fontsize=10, family="monospace", color="black"
     )
 
-    # ---------- Legend UNDER the plot (boxed, deduped) ----------
+    # ---------- Legend WELL BELOW (boxed, deduped) ----------
     handles, labels = ax.get_legend_handles_labels()
-    dedup = OrderedDict()
+    dedup = {}
     for h, l in zip(handles, labels):
         if l not in dedup:
             dedup[l] = h
@@ -1389,7 +1488,7 @@ def coverage_by_mutation_figure(df: pd.DataFrame) -> plt.Figure:
             list(dedup.values()), list(dedup.keys()),
             loc="center", ncol=ncols,
             frameon=True, fancybox=True, framealpha=0.92,
-            borderpad=0.6, handletextpad=0.6, columnspacing=1.0
+            borderpad=0.8, handletextpad=0.7, columnspacing=1.2
         )
     else:
         # Keep bottom row height even without entries
@@ -1397,21 +1496,27 @@ def coverage_by_mutation_figure(df: pd.DataFrame) -> plt.Figure:
 
     return fig
 
+
 def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
     """
-    Coverage ECDF by site with a dedicated legend row UNDER the plot
-    (baked into the PNG, no overlap/clipping). Math and visuals match your
-    current version; only the layout is changed to guarantee legend placement.
+    Coverage ECDF by site with a **side statistics panel** (own right-hand column)
+    and a **legend well below** the plot on a dedicated row (no overlap/clipping).
+    Math/visuals of ECDF remain the same; only the layout is improved.
     """
     import math
     from collections import OrderedDict
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    from matplotlib.lines import Line2D
 
     set_matplotlib_style()
 
     # ---------- Defensive copy ----------
     d = df.copy()
     if d.empty or "site_id" not in d.columns or "coverage" not in d.columns:
-        fig, ax = plt.subplots(figsize=(10.8, 6.2))
+        fig, ax = plt.subplots(figsize=(12.0, 6.6))
         ax.text(0.5, 0.5, "No data for Coverage ECDF by Site", ha="center", va="center")
         ax.set_axis_off()
         return fig
@@ -1424,15 +1529,21 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
     n_sites = len(sites)
     colors = categorical_palette(n_sites)
 
-    # ---------- Figure: main plot (top) + legend row (bottom) ----------
-    fig = plt.figure(figsize=(10.8, 6.8))
+    # ---------- Figure: ECDF (left) + stats (right) + deep legend row ----------
+    fig = plt.figure(figsize=(12.6, 7.8))
     gs = fig.add_gridspec(
-        nrows=2, ncols=1,
-        height_ratios=[1.0, 0.26],   # bottom row reserved for legend
-        left=0.08, right=0.99, bottom=0.06, top=0.90, hspace=0.02
+        nrows=3, ncols=2,
+        height_ratios=[1.0, 0.12, 0.34],   # spacer + deep legend
+        width_ratios=[1.0, 0.38],          # right column reserved for stats panel
+        left=0.07, right=0.99, bottom=0.06, top=0.92,
+        hspace=0.16, wspace=0.16
     )
-    ax    = fig.add_subplot(gs[0, 0])
-    legax = fig.add_subplot(gs[1, 0]); legax.axis("off")
+    ax     = fig.add_subplot(gs[0, 0])
+    statax = fig.add_subplot(gs[0, 1]); statax.axis("off")
+    spacer = fig.add_subplot(gs[1, :]); spacer.axis("off")
+    legax  = fig.add_subplot(gs[2, :]); legax.axis("off")
+
+    fig.suptitle("Coverage ECDF by Site", fontsize=14, y=0.985)
 
     # ---------- Log-scale decision with guard ----------
     cov_all = d["coverage"].to_numpy(dtype=float)
@@ -1475,7 +1586,6 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
             continue
 
         vals = np.sort(vals)
-        # ECDF y
         y = np.arange(1, n + 1, dtype=float) / n
 
         # Log plotting guard: clip zeros up to x_min
@@ -1485,7 +1595,7 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
         (line,) = ax.step(vals_plot, y, where="post", lw=lw, color=colors[i], alpha=0.95, label=site)
         handles.append(line); labels.append(site)
 
-        # Statistics
+        # Statistics per site
         mean = float(np.mean(vals))
         var  = float(np.var(vals, ddof=1)) if n >= 2 else float("nan")
         med  = float(np.median(vals))
@@ -1502,35 +1612,38 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
             ax.axvline(max(med, x_min if use_log else med),
                        ls="--", lw=0.8, color=colors[i], alpha=0.55)
 
-    # ---------- Summary annotation (top-right of the plot) ----------
+    # ---------- Global stats → side panel ----------
     stats_df = pd.DataFrame(stats_rows, columns=["site", "n", "mean", "median", "var", "q10", "q90", "gini"])
     if not stats_df.empty:
-        summary = (
-            "Global ECDF statistics (median across sites):\n"
-            f"Mean = {stats_df['mean'].median():.1f}\n"
-            f"Median = {stats_df['median'].median():.1f}\n"
-            f"Variance = {stats_df['var'].median():.1f}\n"
-            f"q10 = {stats_df['q10'].median():.1f}, q90 = {stats_df['q90'].median():.1f}\n"
-            f"Gini = {stats_df['gini'].median():.3f}"
-        )
-        ax.text(
-            0.98, 0.98, summary,
-            transform=ax.transAxes,
-            ha="right", va="top",
-            fontsize=9, family="monospace",
-            bbox=dict(boxstyle="round,pad=0.38", facecolor="white",
-                      edgecolor="0.85", alpha=0.95)
+        # Soft background
+        statax.add_patch(Rectangle((0.0, 0.0), 1.0, 1.0,
+                                   transform=statax.transAxes, fc="white",
+                                   ec="0.85", lw=1.0, alpha=0.98, zorder=-1))
+        summary_lines = [
+            "Global ECDF summary",
+            "───────────────────",
+            f"Sites          : {int(stats_df['site'].nunique())}",
+            f"Median(mean)   : {stats_df['mean'].median():.1f}",
+            f"Median(median) : {stats_df['median'].median():.1f}",
+            f"Median(var)    : {stats_df['var'].median():.1f}",
+            f"Median q10     : {stats_df['q10'].median():.1f}",
+            f"Median q90     : {stats_df['q90'].median():.1f}",
+            f"Median Gini    : {stats_df['gini'].median():.3f}",
+        ]
+        statax.text(
+            0.06, 0.94, "\n".join(summary_lines),
+            transform=statax.transAxes,
+            ha="left", va="top", fontsize=10, family="monospace", color="black"
         )
 
     # ---------- Axes formatting ----------
-    ax.set_title("Coverage ECDF by Site")
     ax.set_xlabel("Coverage" + (" (log scale)" if use_log else ""))
     ax.set_ylabel("Empirical CDF (F(x))")
     ax.set_xlim(x_min if use_log else 0.0, x_max)
     ax.set_ylim(0, 1.02)
     ax.grid(True, ls=":", alpha=0.4)
 
-    # ---------- Legend UNDER the plot (boxed, dedup + size cap) ----------
+    # ---------- Legend WELL BELOW (boxed, dedup + size cap) ----------
     if handles:
         dedup = OrderedDict()
         for h, l in zip(handles, labels):
@@ -1542,7 +1655,6 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
         shown_labels = [l for l, _ in shown_items]
         shown_handles = [h for _, h in shown_items]
         if len(dedup) > max_items:
-            from matplotlib.lines import Line2D
             shown_labels.append(f"+{len(dedup) - max_items} more")
             shown_handles.append(Line2D([], [], color="none"))
 
@@ -1552,7 +1664,7 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
             loc="center",
             ncol=ncols,
             frameon=True, fancybox=True, framealpha=0.92,
-            borderpad=0.6, handletextpad=0.6, columnspacing=1.0
+            borderpad=0.8, handletextpad=0.7, columnspacing=1.2
         )
     else:
         legax.text(0.5, 0.5, "", ha="center", va="center")
@@ -1561,22 +1673,54 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame) -> plt.Figure:
 
 def prevalence_entropy_tables(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Per-mutation prevalence and temporal dispersion (entropy), robust and schema-stable.
+    Compute per-mutation **prevalence** metrics and **temporal dispersion** (entropy) metrics
+    from long-format counts.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Must contain:
+          - 'mutation' : str-like
+          - 'count'    : numeric ≥ 0
+          - 'coverage' : numeric ≥ 0
+        Optional:
+          - 'date'     : datetime-like (used for temporal metrics)
+          - 'af_obs'   : numeric in [0, 1]; if missing, computed as count/coverage (0 when coverage==0).
 
     Returns
     -------
-    prevalence : DataFrame
-        Columns:
-          ['mutation', 'prevalence_unweighted', 'prevalence_weighted',
-           'n_rows', 'total_count', 'total_coverage',
-           'n_dates_total', 'n_dates_nonzero',
-           'mean_coverage', 'median_coverage',
-           'first_date', 'last_date']
-    entropy : DataFrame
-        Columns:
-          ['mutation', 'temporal_entropy_normalized', 'temporal_effective_num_dates',
-           'temporal_gini', 'temporal_peak_date', 'temporal_peak_fraction',
-           'temporal_n_dates', 'temporal_n_nonzero_dates']
+    prevalence : pandas.DataFrame
+        One row per mutation with columns:
+          - 'mutation'
+          - 'prevalence_unweighted' : mean(af_obs > 0)
+          - 'prevalence_weighted'   : sum(count) / sum(coverage), clipped to [0, 1]
+          - 'n_rows'
+          - 'total_count'
+          - 'total_coverage'
+          - 'mean_coverage'
+          - 'median_coverage'
+          - 'first_date' (if 'date' present, else NaT)
+          - 'last_date'  (if 'date' present, else NaT)
+          - 'n_dates_total'        : # unique dates seen (0 if no 'date')
+          - 'n_dates_nonzero'      : # dates with date-level AF > 0 (0 if no 'date')
+
+    entropy : pandas.DataFrame
+        One row per mutation with columns (requires 'date'; otherwise zeros/NaNs are returned):
+          - 'mutation'
+          - 'temporal_entropy_normalized' : H / log(k), where k = # dates with AF>0
+          - 'temporal_effective_num_dates': exp(H)
+          - 'temporal_gini'               : inequality of date-wise AF mass
+          - 'temporal_peak_date'          : date with max AF mass
+          - 'temporal_peak_fraction'      : max AF mass fraction
+          - 'temporal_n_dates'            : total # dates observed
+          - 'temporal_n_nonzero_dates'    : k
+
+    Notes
+    -----
+    - Inputs are sanitized: negative counts/coverage → 0; 'af_obs' clipped to [0, 1].
+    - If required columns are missing, empty data frames with the correct schemas are returned.
+    - Dates are normalized to date (no time) before aggregation.
+    - Output is sorted by 'mutation' with stable dtypes.
     """
     # ---------- Defensive copy & required columns ----------
     d = df.copy()
@@ -1622,7 +1766,7 @@ def prevalence_entropy_tables(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFr
     wprev = wprev.astype(float).rename("prevalence_weighted")
 
     # Extras
-    n_rows     = d.groupby("mutation", observed=True).size().rename("n_rows").astype(int)
+    n_rows      = d.groupby("mutation", observed=True).size().rename("n_rows").astype(int)
     total_count = sums["count"].rename("total_count").astype(float)
     total_cov   = sums["coverage"].rename("total_coverage").astype(float)
     mean_cov    = d.groupby("mutation", observed=True)["coverage"].mean().rename("mean_coverage").astype(float)
@@ -1781,24 +1925,28 @@ def prevalence_entropy_tables(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFr
         prevalence["prevalence_weighted"] = prevalence["prevalence_weighted"].clip(0.0, 1.0)
 
     return prevalence, entropy
+
 def mutation_variance_and_missingness(
     df: pd.DataFrame,
     min_coverage: int
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Per-mutation AF variance and per-mutation missingness across the full site×date grid.
+    Compute per-mutation AF variance/summary stats and per-mutation missingness
+    over the full (site × date) grid.
 
     Returns
     -------
-    var_tbl : DataFrame
+    var_tbl : DataFrame  (sorted by var_af_obs desc)
         ['mutation', 'var_af_obs', 'mean_af_obs', 'median_af_obs', 'iqr_af_obs',
          'wmean_af_obs', 'wvar_af_obs', 'n_obs', 'sum_coverage']
-         (sorted by var_af_obs desc)
-    miss_tbl : DataFrame
+
+    miss_tbl : DataFrame (sorted by missingness_rate desc)
         ['mutation', 'missingness_rate', 'present_rate', 'present_count',
          'grid_size', 'n_sites', 'n_dates']
-         (sorted by missingness_rate desc)
     """
+    import numpy as np
+    import pandas as pd
+
     # -------- Defensive copy + schema checks --------
     d = df.copy()
     need = {"mutation", "coverage"}
@@ -1820,11 +1968,11 @@ def mutation_variance_and_missingness(
     if "count" in d.columns:
         d["count"] = pd.to_numeric(d["count"], errors="coerce").fillna(0).astype(float)
         d.loc[d["count"] < 0, "count"] = 0.0
-    # Ensure af_obs exists
+
+    # Ensure af_obs exists and is clipped to [0,1]
     if "af_obs" not in d.columns:
-        d["af_obs"] = np.where(d.get("count", 0.0) > 0,
-                               np.where(d["coverage"] > 0, d.get("count", 0.0) / d["coverage"], 0.0),
-                               0.0)
+        cnt = d["count"] if "count" in d.columns else 0.0
+        d["af_obs"] = np.where(d["coverage"] > 0, cnt / d["coverage"], 0.0)
     d["af_obs"] = pd.to_numeric(d["af_obs"], errors="coerce").fillna(0.0).astype(float).clip(0.0, 1.0)
 
     # -------- VARIANCE & DESCRIPTIVE STATS (per mutation) --------
@@ -1836,27 +1984,26 @@ def mutation_variance_and_missingness(
     else:
         g = d.groupby("mutation", sort=True, observed=True)
 
-        var_unw   = g["af_obs"].var(ddof=1).fillna(0.0).rename("var_af_obs")
-        mean_unw  = g["af_obs"].mean().rename("mean_af_obs")
-        med_unw   = g["af_obs"].median().rename("median_af_obs")
-        q25       = g["af_obs"].quantile(0.25)
-        q75       = g["af_obs"].quantile(0.75)
-        iqr_unw   = (q75 - q25).rename("iqr_af_obs")
-        n_obs     = g.size().rename("n_obs").astype(int)
+        var_unw  = g["af_obs"].var(ddof=1).fillna(0.0).rename("var_af_obs")
+        mean_unw = g["af_obs"].mean().rename("mean_af_obs")
+        med_unw  = g["af_obs"].median().rename("median_af_obs")
+        q25      = g["af_obs"].quantile(0.25)
+        q75      = g["af_obs"].quantile(0.75)
+        iqr_unw  = (q75 - q25).rename("iqr_af_obs")
+        n_obs    = g.size().rename("n_obs").astype(int)
 
         tmp = d.assign(
-            w  = d["coverage"].astype(float),
-            wx = d["coverage"].astype(float) * d["af_obs"].astype(float),
-            wx2= d["coverage"].astype(float) * (d["af_obs"].astype(float) ** 2),
+            w   = d["coverage"].astype(float),
+            wx  = d["coverage"].astype(float) * d["af_obs"].astype(float),
+            wx2 = d["coverage"].astype(float) * (d["af_obs"].astype(float) ** 2),
         )
-        sum_w  = tmp.groupby("mutation", observed=True)["w"].sum().rename("sum_w")
-        sum_wx = tmp.groupby("mutation", observed=True)["wx"].sum()
-        sum_wx2= tmp.groupby("mutation", observed=True)["wx2"].sum()
+        sum_w   = tmp.groupby("mutation", observed=True)["w"].sum().rename("sum_w")
+        sum_wx  = tmp.groupby("mutation", observed=True)["wx"].sum()
+        sum_wx2 = tmp.groupby("mutation", observed=True)["wx2"].sum()
 
         wmean = (sum_wx / sum_w.replace(0, np.nan)).fillna(0.0).rename("wmean_af_obs")
-        m2    = (sum_wx2 / sum_w.replace(0, np.nan)).rename("m2")
+        m2    = (sum_wx2 / sum_w.replace(0, np.nan))
         wvar  = (m2 - wmean**2).clip(lower=0.0).fillna(0.0).rename("wvar_af_obs")
-
         sum_cov = sum_w.rename("sum_coverage").astype(float)
 
         var_tbl = (
@@ -1888,12 +2035,14 @@ def mutation_variance_and_missingness(
 
     sites = sorted(d["site_id"].unique().tolist())
     dates = sorted(d["date"].unique().tolist())
+    muts_all = sorted(d["mutation"].unique().tolist())
+
     n_sites, n_dates = len(sites), len(dates)
     grid_size = n_sites * n_dates
 
     if grid_size == 0:
         miss_tbl = pd.DataFrame({
-            "mutation": sorted(d["mutation"].unique().tolist()),
+            "mutation": muts_all,
             "missingness_rate": 1.0,
             "present_rate": 0.0,
             "present_count": 0,
@@ -1911,14 +2060,16 @@ def mutation_variance_and_missingness(
          .unstack("mutation")
     )
 
-    # Reindex to full grid (absent=0)
+    # Reindex to the full grid (all sites×dates) and include ALL mutations as columns
     full_idx = pd.MultiIndex.from_product([sites, dates], names=["site_id", "date"])
-    present = present.reindex(full_idx).fillna(0).astype(int)
+    present = present.reindex(full_idx)  # reindex rows
+    present = present.reindex(columns=muts_all)  # ensure all mutations appear
+    present = present.fillna(0).astype(int)
 
     # Per-mutation stats
-    present_count   = present.sum(axis=0).astype(int).rename("present_count")
-    present_rate    = present.mean(axis=0).astype(float).rename("present_rate")
-    missingness_rate= (1.0 - present_rate).rename("missingness_rate")
+    present_count    = present.sum(axis=0).astype(int).rename("present_count")
+    present_rate     = present.mean(axis=0).astype(float).rename("present_rate")
+    missingness_rate = (1.0 - present_rate).rename("missingness_rate")
 
     miss_tbl = (
         pd.concat([missingness_rate, present_rate, present_count], axis=1)
@@ -1935,19 +2086,41 @@ def mutation_variance_and_missingness(
     )
 
     return var_tbl, miss_tbl
+
 def beta_binomial_overdisp_moments(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Beta–Binomial overdispersion per mutation using a coverage-aware method-of-moments.
+    Estimate Beta–Binomial overdispersion **per mutation** via a coverage-aware
+    method-of-moments (MoM).
+
+    For each mutation we observe counts y_i with coverages n_i and define:
+      μ = Σ y_i / Σ n_i
+      z_i = y_i / n_i
+      s²_prop = Var(z_i)  (sample variance, ddof=1)
+
+    Under a Beta–Binomial with concentration κ (alpha=μκ, beta=(1−μ)κ),
+    the variance of the proportions satisfies
+        E[Var(z_i)] = μ(1−μ) · (n_i + κ) / ((1+κ) n_i).
+    We solve the **monotone** equation
+        mean_i[ μ(1−μ) · (n_i + κ) / ((1+κ) n_i ) ] = s²_prop
+    for κ ≥ 0 by bisection (status: {'ok','at_lower','at_upper','degenerate','insufficient'}).
 
     Output columns (unchanged):
       ['mutation', 'p_hat', 'n_bar', 'var_y', 'phi_mom',
        'rho_mom', 'kappa_mom', 'alpha_mom', 'beta_mom',
        's2_prop', 's2_prop_theory_min', 's2_prop_theory_max',
        'n_reps', 'sum_counts', 'sum_coverage', 'solver_status']
+    Where:
+      • p_hat = μ,  n_bar = mean(n_i),  var_y = Var(y_i)
+      • phi_mom ≡ kappa_mom  (legacy name kept; larger κ ⇒ less overdispersion)
+      • rho_mom = 1/(1+κ)  (intra-class correlation)
+      • s2_prop_theory_min = μ(1−μ)·mean(1/n_i)   (κ→∞, Binomial limit)
+      • s2_prop_theory_max = μ(1−μ)               (κ=0)
     """
+    import numpy as np
+    import pandas as pd
+
     # ---- Defensive copy & normalization ----
     d = df.copy()
-
     if "mutation" not in d.columns:
         d["mutation"] = "NA"
     d["mutation"] = d["mutation"].astype(str)
@@ -1956,55 +2129,49 @@ def beta_binomial_overdisp_moments(df: pd.DataFrame) -> pd.DataFrame:
     d["coverage"] = pd.to_numeric(d.get("coverage", 0), errors="coerce").fillna(0.0).astype(float)
     d.loc[d["coverage"] < 0, "coverage"] = 0.0
 
-    # counts (fallback from af_obs if absent or all invalid)
+    # counts (fallback from af_obs row-wise if missing/NaN)
     if "count" in d.columns:
-        d["count"] = pd.to_numeric(d["count"], errors="coerce").fillna(0.0).astype(float)
+        d["count"] = pd.to_numeric(d["count"], errors="coerce")
     else:
-        d["count"] = 0.0
-
-    # If counts are missing or non-finite everywhere, derive from af_obs * coverage row-wise when possible
-    if "af_obs" in d.columns and (("count" not in df.columns) or ~np.isfinite(d["count"]).any()):
-        af = pd.to_numeric(d["af_obs"], errors="coerce").fillna(0.0).astype(float).clip(0.0, 1.0)
-        d["count"] = af * d["coverage"]
+        d["count"] = np.nan
+    if "af_obs" in d.columns:
+        af = pd.to_numeric(d["af_obs"], errors="coerce").fillna(0.0).clip(0.0, 1.0).astype(float)
+        miss = ~np.isfinite(d["count"])
+        d.loc[miss, "count"] = np.where(d.loc[miss, "coverage"] > 0.0,
+                                        af.loc[miss] * d.loc[miss, "coverage"], 0.0)
+    d["count"] = d["count"].fillna(0.0).astype(float)
+    d.loc[d["count"] < 0, "count"] = 0.0
 
     # Clip counts to [0, coverage]
-    d["count"] = d["count"].clip(lower=0.0)
-    bad = d["count"] > d["coverage"]
-    if bad.any():
-        d.loc[bad, "count"] = d.loc[bad, "coverage"]
+    d["count"] = np.minimum(d["count"], d["coverage"])
 
     rows = []
     KAPPA_MAX = 1e12
-    EPS = 1e-12
 
     # ---- Internal solver: monotone bisection for κ ≥ 0 ----
-    def _solve_kappa(mu: float, n_vec: np.ndarray, s2_prop: float) -> Tuple[float, str]:
+    def _solve_kappa(mu: float, n_vec: np.ndarray, s2_prop: float) -> tuple[float, str]:
         """
         Solve mean_i[ μ(1−μ) * (n_i + κ) / ((1 + κ) n_i) ] = s2_prop  for κ ≥ 0.
-        Returns (kappa, status) with status ∈ {'ok','at_lower','at_upper','degenerate','insufficient'}.
+        Return (kappa, status).
         """
-        if not (0.0 < mu < 1.0):
-            return (np.nan, "degenerate")
-        if not np.isfinite(s2_prop):
-            return (np.nan, "insufficient")
+        if not (0.0 < mu < 1.0) or not np.isfinite(s2_prop):
+            return (np.nan, "degenerate" if (mu <= 0.0 or mu >= 1.0) else "insufficient")
 
         inv_n = 1.0 / np.maximum(n_vec, 1.0)
-        s2_max = mu * (1.0 - mu)                        # κ = 0 (max overdispersion)
-        s2_min = mu * (1.0 - mu) * float(np.mean(inv_n))  # κ → ∞ (binomial limit)
+        s2_max = mu * (1.0 - mu)                        # κ = 0 (max overdisp)
+        s2_min = mu * (1.0 - mu) * float(np.mean(inv_n))  # κ → ∞ (binomial)
 
-        # Boundary checks (with small tolerance)
+        # Boundaries
         if s2_prop >= s2_max - 1e-12:
             return (0.0, "at_lower")
         if s2_prop <= s2_min + 1e-12:
             return (KAPPA_MAX, "at_upper")
 
-        # Strictly decreasing function in κ
         def f(kappa: float) -> float:
             return float(mu * (1.0 - mu) * np.mean((n_vec + kappa) / ((1.0 + kappa) * n_vec)) - s2_prop)
 
         lo, hi = 0.0, KAPPA_MAX
-        flo, fhi = f(lo), f(hi)  # flo > 0, fhi < 0 by construction
-        # Guard in case of any numeric pathology
+        flo, fhi = f(lo), f(hi)  # flo > 0, fhi < 0 if well-posed
         if not np.isfinite(flo) or not np.isfinite(fhi):
             return (np.nan, "insufficient")
 
@@ -2017,16 +2184,15 @@ def beta_binomial_overdisp_moments(df: pd.DataFrame) -> pd.DataFrame:
                 hi = mid
             if abs(hi - lo) <= 1e-9 * (1.0 + lo + hi):
                 break
-        kappa = float(0.5 * (lo + hi))
-        return (kappa, "ok")
+        return (float(0.5 * (lo + hi)), "ok")
 
     # ---- Per-mutation loop ----
     for mut, g in d.groupby("mutation", sort=True, observed=True):
-        y = g["count"].to_numpy(dtype=float)
-        n = g["coverage"].to_numpy(dtype=float)
+        y = g["count"].to_numpy(float)
+        n = g["coverage"].to_numpy(float)
 
         mask = np.isfinite(y) & np.isfinite(n) & (n > 0)
-        y = y[mask]; n = n[mask]
+        y, n = y[mask], n[mask]
         n_reps = int(y.size)
 
         sum_y = float(np.sum(y)) if n_reps else 0.0
@@ -2034,22 +2200,11 @@ def beta_binomial_overdisp_moments(df: pd.DataFrame) -> pd.DataFrame:
 
         if n_reps < 2 or sum_n <= 0.0:
             rows.append({
-                "mutation": mut,
-                "p_hat": np.nan,
-                "n_bar": float(np.nan),
-                "var_y": float(np.nan),
-                "phi_mom": float(np.nan),
-                "rho_mom": float(np.nan),
-                "kappa_mom": float(np.nan),
-                "alpha_mom": float(np.nan),
-                "beta_mom": float(np.nan),
-                "s2_prop": float(np.nan),
-                "s2_prop_theory_min": float(np.nan),
-                "s2_prop_theory_max": float(np.nan),
-                "n_reps": n_reps,
-                "sum_counts": sum_y,
-                "sum_coverage": sum_n,
-                "solver_status": "insufficient",
+                "mutation": mut, "p_hat": np.nan, "n_bar": np.nan, "var_y": np.nan,
+                "phi_mom": np.nan, "rho_mom": np.nan, "kappa_mom": np.nan,
+                "alpha_mom": np.nan, "beta_mom": np.nan,
+                "s2_prop": np.nan, "s2_prop_theory_min": np.nan, "s2_prop_theory_max": np.nan,
+                "n_reps": n_reps, "sum_counts": sum_y, "sum_coverage": sum_n, "solver_status": "insufficient",
             })
             continue
 
@@ -2061,22 +2216,11 @@ def beta_binomial_overdisp_moments(df: pd.DataFrame) -> pd.DataFrame:
 
         if not (0.0 < mu < 1.0):
             rows.append({
-                "mutation": mut,
-                "p_hat": float(mu),
-                "n_bar": float(n_bar),
-                "var_y": float(var_y),
-                "phi_mom": float(np.nan),
-                "rho_mom": float(np.nan),
-                "kappa_mom": float(np.nan),
-                "alpha_mom": float(np.nan),
-                "beta_mom": float(np.nan),
-                "s2_prop": float(s2_prop),
-                "s2_prop_theory_min": float(np.nan),
-                "s2_prop_theory_max": float(np.nan),
-                "n_reps": n_reps,
-                "sum_counts": sum_y,
-                "sum_coverage": sum_n,
-                "solver_status": "degenerate",
+                "mutation": mut, "p_hat": float(mu), "n_bar": n_bar, "var_y": var_y,
+                "phi_mom": np.nan, "rho_mom": np.nan, "kappa_mom": np.nan,
+                "alpha_mom": np.nan, "beta_mom": np.nan,
+                "s2_prop": s2_prop, "s2_prop_theory_min": np.nan, "s2_prop_theory_max": np.nan,
+                "n_reps": n_reps, "sum_counts": sum_y, "sum_coverage": sum_n, "solver_status": "degenerate",
             })
             continue
 
@@ -2099,7 +2243,7 @@ def beta_binomial_overdisp_moments(df: pd.DataFrame) -> pd.DataFrame:
             "p_hat": float(mu),
             "n_bar": float(n_bar),
             "var_y": float(var_y),
-            "phi_mom": float(kappa),       # legacy name retained (== kappa)
+            "phi_mom": float(kappa),       # legacy alias: φ ≡ κ here
             "rho_mom": float(rho),
             "kappa_mom": float(kappa),
             "alpha_mom": float(alpha),
@@ -2115,14 +2259,16 @@ def beta_binomial_overdisp_moments(df: pd.DataFrame) -> pd.DataFrame:
 
     out = pd.DataFrame(rows)
     if not out.empty:
-        # Ensure numeric dtypes are floats (not objects) for downstream CSVs
+        # Normalize dtypes and stable ordering
         num_cols = ["p_hat","n_bar","var_y","phi_mom","rho_mom","kappa_mom",
                     "alpha_mom","beta_mom","s2_prop","s2_prop_theory_min",
                     "s2_prop_theory_max","n_reps","sum_counts","sum_coverage"]
         for c in num_cols:
             if c in out.columns:
                 out[c] = pd.to_numeric(out[c], errors="coerce")
-        out = out.sort_values(["phi_mom", "mutation"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
+        out = (out
+               .sort_values(["phi_mom", "mutation"], ascending=[True, True], kind="mergesort")
+               .reset_index(drop=True))
     return out
 
 # ---------------------------
@@ -2140,8 +2286,10 @@ def site_variant_panel(
     """
     2×2 lineage signature panel (AF over time) with a **dedicated legend row UNDER the figure**.
     Legend is deduplicated across all four panels and baked into the PNG (no overlap/clipping).
+    Adds an extra spacer row so there is **significant white space** between plots and legend.
     """
     import math
+    import numpy as np
     import matplotlib.dates as mdates
 
     set_matplotlib_style()
@@ -2178,11 +2326,11 @@ def site_variant_panel(
 
     AF_YMIN, AF_YMAX = 0.0, 1.02
 
-    # ---- Figure with bottom legend row (3 rows: 2 plot rows + 1 legend row) ----
-    fig = plt.figure(figsize=(12.4, 9.8))
+    # ---- Figure with spacer + deep legend row (4 rows total) ----
+    fig = plt.figure(figsize=(12.4, 10.8))
     gs = fig.add_gridspec(
-        nrows=3, ncols=2,
-        height_ratios=[1.0, 1.0, 0.28],  # bottom row reserved for legend
+        nrows=4, ncols=2,
+        height_ratios=[1.0, 1.0, 0.46, 0.36],  # row 3 = SPACER, row 4 = LEGEND
         left=0.07, right=0.99, top=0.90, bottom=0.08, hspace=0.30, wspace=0.10
     )
 
@@ -2190,7 +2338,8 @@ def site_variant_panel(
     ax12 = fig.add_subplot(gs[0, 1])
     ax21 = fig.add_subplot(gs[1, 0])
     ax22 = fig.add_subplot(gs[1, 1])
-    leg_ax = fig.add_subplot(gs[2, :]); leg_ax.axis("off")
+    spacer_ax = fig.add_subplot(gs[2, :]); spacer_ax.axis("off")   # deliberate white space
+    leg_ax    = fig.add_subplot(gs[3, :]); leg_ax.axis("off")      # legend row
 
     # shared date formatter
     locator = mdates.AutoDateLocator(minticks=3, maxticks=6)
@@ -2238,7 +2387,7 @@ def site_variant_panel(
         ax.axhline(pcfg.left_censor_af, ls="--", lw=1.0, color="black", alpha=0.8)
 
         # panel title: pretty label if available
-        ax.set_title(label_map.get(lin, lin))
+        ax.set_title(label_map.get(lin, lin), pad=6)
 
         # unified scales and ticks
         ax.set_ylim(AF_YMIN, AF_YMAX)
@@ -2262,15 +2411,13 @@ def site_variant_panel(
     if legend_handles:
         labels = list(legend_handles.keys())
         handles = list(legend_handles.values())
-
-        # reasonable number of columns; scales with label count
         ncol = min(8, max(2, int(math.ceil(len(labels) / 2))))
         leg = leg_ax.legend(
             handles, labels,
             loc="center",
             ncol=ncol,
             frameon=True, fancybox=True, framealpha=0.95, edgecolor="0.6",
-            borderpad=0.6, columnspacing=1.2, handletextpad=0.6, scatterpoints=1,
+            borderpad=0.8, columnspacing=1.4, handletextpad=0.7, scatterpoints=1,
             fontsize=8,
         )
         leg.set_title("Mutations", prop={"size": 9})
@@ -2279,11 +2426,10 @@ def site_variant_panel(
         except Exception:
             pass
     else:
-        # keep bottom row height consistent even without entries
         leg_ax.text(0.5, 0.5, "", ha="center", va="center")
 
     # Figure title
-    fig.suptitle(f"Site {site_id} — Variant panel (lineage × mutations, AF scatter)", fontsize=14)
+    fig.suptitle(f"Site {site_id} — Variant panel (lineage × mutations, AF scatter)", fontsize=14, y=0.94)
 
     # Align y-labels vertically within columns for symmetry (best-effort)
     try:
@@ -2293,6 +2439,7 @@ def site_variant_panel(
         pass
 
     return fig
+
 def site_analysis_panel(
     site_df: pd.DataFrame,
     sigs_df: pd.DataFrame,
@@ -2302,21 +2449,33 @@ def site_analysis_panel(
     mut_to_color: Dict[str, tuple],
 ) -> plt.Figure:
     """
-    Site analysis (2×2) with **per-panel legends centered UNDER each subplot** in framed boxes.
-    Layout is a 4×2 GridSpec:
+    Site analysis as **four stacked panels** (A,B,C,D), each with its **own legend
+    directly underneath** and with extra white space between the plot and its legend.
 
-        Row 0:  A plot     |  B plot
-        Row 1:  A legend   |  B legend
-        Row 2:  C plot     |  D plot
-        Row 3:  C legend   |  D legend
-
-    This guarantees legends are *under* each panel with ample spacing in saved PNG/PDFs.
+    Layout (GridSpec 8×1):
+        Row 0:  A plot             — AF over time (all mutations)
+        Row 1:  A legend
+        Row 2:  B plot             — Alt vs Ref (+ AF & coverage guides)
+        Row 3:  B legend
+        Row 4:  C plot             — Coverage per mutation (+ flagged highlight)
+        Row 5:  C legend
+        Row 6:  D plot             — Lineage signature presence (weighted)
+        Row 7:  D legend
     """
     import math
     import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
     from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
+    from matplotlib.patches import Patch, Rectangle
+
+    # Optional seaborn (fallback to mpl if missing)
+    try:
+        import seaborn as sns
+        HAS_SEABORN = True
+    except Exception:
+        HAS_SEABORN = False
 
     set_matplotlib_style()
 
@@ -2330,8 +2489,8 @@ def site_analysis_panel(
         date_max = date_min + pd.Timedelta(days=1)
 
     AF_YMIN, AF_YMAX = 0.0, 1.05
-    date_locator  = mdates.AutoDateLocator(minticks=3, maxticks=6)
-    date_formatter= mdates.ConciseDateFormatter(date_locator)
+    date_locator   = mdates.AutoDateLocator(minticks=3, maxticks=6)
+    date_formatter = mdates.ConciseDateFormatter(date_locator)
 
     # -----------------------
     # Legend sizing helpers
@@ -2343,89 +2502,78 @@ def site_analysis_panel(
         return 0 if n <= 0 else int(math.ceil(n / max(1, ncol)))
 
     def _leg_height(rows: int) -> float:
-        # Fraction of a plot row reserved for the legend axes
-        return 0.22 + 0.10 * max(rows - 1, 0) if rows > 0 else 0.14
+        # Fraction of a plot row reserved for the legend axes (per-panel)
+        return 0.24 + 0.10 * max(rows - 1, 0) if rows > 0 else 0.16
 
     # -----------------------
-    # Pre-compute expected legend loads
+    # Pre-compute expected legend loads (A–D)
     # -----------------------
-    # (A) — AF over time: how many mutation labels (AF>0)?
+    # (A) AF over time — unique mutations with AF>0
     muts_present = (
         site_df.loc[site_df["af_obs"] > 0, "mutation"]
                .astype(str).sort_values().unique().tolist()
     )
-    nA = len(muts_present)
-    ncolA = _cols_for(nA, 8)
-    rowsA = _rows_for(nA, ncolA)
+    nA = len(muts_present); ncolA = _cols_for(nA, 10); rowsA = _rows_for(nA, ncolA)
 
-    # (B) — Alt/Ref: 'Rows' + AF lines + iso-coverage lines (up to 4)
+    # (B) Alt/Ref — Rows + AF lines (up to 3) + coverage lines (up to 4)
     base_fs = [0.5, 0.1]
-    if 0.0 < float(pcfg.left_censor_af) < 1.0:
-        base_fs.append(float(pcfg.left_censor_af))
-    base_fs = sorted(set(f for f in base_fs if 0.0 < f < 1.0), reverse=True)
-    n_iso_af  = len(base_fs)
-    n_iso_cov = 4  # upper bound; actual lines may be fewer
+    try:
+        if 0.0 < float(pcfg.left_censor_af) < 1.0:
+            base_fs.append(float(pcfg.left_censor_af))
+    except Exception:
+        pass
+    base_fs = sorted({f for f in base_fs if 0.0 < f < 1.0}, reverse=True)
+    n_iso_af, n_iso_cov = len(base_fs), 4
     nB = 1 + n_iso_af + n_iso_cov
-    ncolB = _cols_for(nB, 8)
-    rowsB = _rows_for(nB, ncolB)
+    ncolB = _cols_for(nB, 8); rowsB = _rows_for(nB, ncolB)
 
-    # (C) — Coverage bias: flagged vs other
+    # (C) Coverage bias — flagged vs other
     flagged_muts = set(
         bias_loci_df.loc[
             (bias_loci_df["flag_dropout"] | bias_loci_df["flag_ref_bias"]),
             "mutation"
         ].astype(str)
-    )
+    ) if not bias_loci_df.empty else set()
     nC = 2 if flagged_muts else 1
-    ncolC = nC
-    rowsC = 1 if nC else 0
+    ncolC = nC; rowsC = 1 if nC else 0
 
-    # (D) — Lineage presence: how many lineages may appear?
+    # (D) Lineage presence — number of lineages with any signature mut at site
     lineage_to_weights: Dict[str, Dict[str, float]] = {}
     for _, row in sigs_df.iterrows():
         lineage_to_weights.setdefault(str(row["lineage"]), {})[str(row["mutation"])] = float(row["weight"])
     muts_at_site = set(site_df["mutation"].astype(str))
     lin_present  = sorted([lin for lin, mw in lineage_to_weights.items() if any(m in muts_at_site for m in mw)])
-    nD    = len(lin_present)
-    ncolD = _cols_for(nD, 8)
-    rowsD = _rows_for(nD, ncolD)
+    nD = len(lin_present); ncolD = _cols_for(nD, 8); rowsD = _rows_for(nD, ncolD)
 
-    # Compute legend row heights
-    top_leg_h = _leg_height(max(rowsA, rowsB))
-    bot_leg_h = _leg_height(max(rowsC, rowsD))
+    # Legend heights per panel
+    legA_h, legB_h, legC_h, legD_h = map(_leg_height, (rowsA, rowsB, rowsC, rowsD))
 
     # -----------------------
-    # Figure & Grid (4 rows × 2 cols)
+    # Figure & Grid (8 rows × 1 col)
     # -----------------------
-    fig_h = 10.0 + 0.9 * (max(rowsA, rowsB) + max(rowsC, rowsD))
-    fig_h = max(10.0, min(20.0, fig_h))
+    # Taller base since panels are stacked; add height as legend rows increase
+    fig_h = 14.0 + 0.8 * (rowsA + rowsB + rowsC + rowsD)
+    fig_h = max(14.0, min(28.0, fig_h))
 
     fig = plt.figure(figsize=(12.8, fig_h))
     gs = fig.add_gridspec(
-        nrows=4, ncols=2,
-        height_ratios=[1.0, top_leg_h, 1.0, bot_leg_h],
-        left=0.07, right=0.99, top=0.90, bottom=0.08,
-        hspace=0.42, wspace=0.16  # airy spacing
+        nrows=8, ncols=1,
+        height_ratios=[1.0, legA_h, 1.0, legB_h, 1.0, legC_h, 1.0, legD_h],
+        left=0.07, right=0.99, top=0.92, bottom=0.08,
+        hspace=0.42
     )
 
-    # Main axes
-    axA = fig.add_subplot(gs[0, 0])
-    axB = fig.add_subplot(gs[0, 1])
-    axC = fig.add_subplot(gs[2, 0])
-    axD = fig.add_subplot(gs[2, 1])
-    # Legend axes (dedicated)
-    legA = fig.add_subplot(gs[1, 0]); legA.axis("off")
-    legB = fig.add_subplot(gs[1, 1]); legB.axis("off")
-    legC = fig.add_subplot(gs[3, 0]); legC.axis("off")
-    legD = fig.add_subplot(gs[3, 1]); legD.axis("off")
+    # Axes per panel
+    axA   = fig.add_subplot(gs[0, 0]); legA = fig.add_subplot(gs[1, 0]); legA.axis("off")
+    axB   = fig.add_subplot(gs[2, 0]); legB = fig.add_subplot(gs[3, 0]); legB.axis("off")
+    axC   = fig.add_subplot(gs[4, 0]); legC = fig.add_subplot(gs[5, 0]); legC.axis("off")
+    axD   = fig.add_subplot(gs[6, 0]); legD = fig.add_subplot(gs[7, 0]); legD.axis("off")
 
     # -----------------------
-    # Panel A — AF over time
+    # Panel A — AF over time (all mutations)
     # -----------------------
-    axA.set_axisbelow(True)
-    axA.grid(True, ls=":", alpha=0.28)
-    handles_A: List[object] = []
-    labels_A:  List[str]    = []
+    axA.set_axisbelow(True); axA.grid(True, ls=":", alpha=0.28)
+    handles_A: List[object] = []; labels_A: List[str] = []
 
     for m in sorted(site_df["mutation"].astype(str).unique()):
         sub = (
@@ -2434,8 +2582,7 @@ def site_analysis_panel(
                    .sort_values("date")
         )
         sub = sub[sub["af_obs"] > 0]
-        if sub.empty:
-            continue
+        if sub.empty: continue
         color = mut_to_color.get(m, (0.2, 0.2, 0.2, 1.0))
         axA.scatter(sub["date"], sub["af_obs"], s=20, alpha=0.9,
                     color=color, label=m, rasterized=True, zorder=2)
@@ -2445,46 +2592,44 @@ def site_analysis_panel(
                                 markeredgecolor='none', label=m))
 
     axA.axhline(pcfg.left_censor_af, ls="--", color="black", lw=1.0)
-    axA.set_title("AF over time (all mutations)")
+    axA.set_title("A. AF over time (all mutations)")
     axA.set_ylabel("Allele frequency")
     axA.set_ylim(AF_YMIN, AF_YMAX)
     if (date_min is not None) and (date_max is not None):
-        axA.set_xlim(date_min, date_max)
-        axA.xaxis.set_major_locator(date_locator)
-        axA.xaxis.set_major_formatter(date_formatter)
+        axA.set_xlim(date_min, date_max); axA.xaxis.set_major_locator(date_locator); axA.xaxis.set_major_formatter(date_formatter)
+    axA.set_xlabel("Date")
 
-    # Legend A (cap)
     if labels_A:
         MAX_A = 36
         if len(labels_A) > MAX_A:
             handles_A = handles_A[:MAX_A]
             labels_A  = labels_A[:MAX_A] + [f"+{len(labels_A)-MAX_A} more"]
         ncols = _cols_for(len(labels_A), 10)
-        legA.legend(handles_A, labels_A, loc="center", ncol=ncols,
-                    frameon=True, fancybox=True, framealpha=0.96, edgecolor="0.6",
-                    fontsize=8.2, handletextpad=0.7, columnspacing=1.4, borderpad=0.7
+        legA.legend(
+            handles_A, labels_A, loc="center", ncol=ncols,
+            frameon=True, fancybox=True, framealpha=0.96, edgecolor="0.6",
+            fontsize=8.2, handletextpad=0.7, columnspacing=1.4, borderpad=0.8
         ).set_title("Mutations", prop={"size": 9.2})
 
     # -----------------------
     # Panel B — Alt vs Ref with guides
     # -----------------------
-    axB.set_axisbelow(True)
-    axB.grid(True, ls=":", alpha=0.28)
+    axB.set_axisbelow(True); axB.grid(True, ls=":", alpha=0.28)
 
     tmp = site_df.copy()
     tmp["ref_count"] = np.maximum(tmp["coverage"] - tmp["count"], 0.0)
     alt = tmp["count"].to_numpy(dtype=float)
     ref = tmp["ref_count"].to_numpy(dtype=float)
     cov = tmp["coverage"].to_numpy(dtype=float)
-
     cov_valid = cov[np.isfinite(cov) & (cov >= 0)]
+
     m99 = float(np.percentile(cov_valid, 99.5)) if cov_valid.size else 1.0
     lim = max(1.0, m99) * 1.05
 
     scB = axB.scatter(alt, ref, s=12, alpha=0.55, label="Rows", rasterized=True)
     xg  = np.linspace(0, lim, 512)
 
-    # AF lines
+    # AF isoclines
     line_handles, line_labels = [], []
     for f, style in zip(base_fs, ["--", ":", "-."][:len(base_fs)]):
         slope = (1.0 / f) - 1.0
@@ -2496,19 +2641,16 @@ def site_analysis_panel(
     if cov_valid.size:
         qs = np.quantile(cov_valid, [0.25, 0.5, 0.75, 0.9])
         for c, style in zip(qs, ["-", "--", ":", "-."]):
-            if c <= 0:
-                continue
+            if c <= 0: continue
             xs = np.linspace(0, min(lim, c), 2)
             (ln,) = axB.plot(xs, c - xs, style, lw=1.0, color="grey", alpha=0.9, label=f"Coverage = {c:.0f}")
             cov_lines.append(ln); cov_labels.append(f"Coverage = {c:.0f}")
 
-    axB.set_title("Alt vs Ref counts")
-    axB.set_xlabel("Alt count")
-    axB.set_ylabel("Ref count")
+    axB.set_title("B. Alt vs Ref counts")
+    axB.set_xlabel("Alt count"); axB.set_ylabel("Ref count")
     axB.set_xlim(0, lim); axB.set_ylim(0, lim)
     axB.set_aspect("equal", adjustable="box")
 
-    # Legend B
     labels_B  = ["Rows"] + line_labels + cov_labels
     handles_B = [scB] + line_handles + cov_lines
     if labels_B:
@@ -2520,14 +2662,13 @@ def site_analysis_panel(
         legB.legend(
             handles_B, labels_B, loc="center", ncol=ncols,
             frameon=True, fancybox=True, framealpha=0.96, edgecolor="0.6",
-            fontsize=8.2, handletextpad=0.7, columnspacing=1.3, borderpad=0.7
+            fontsize=8.2, handletextpad=0.7, columnspacing=1.3, borderpad=0.8
         ).set_title("Guides", prop={"size": 9.2})
 
     # -----------------------
-    # Panel C — Coverage per mutation + flagged highlighting
+    # Panel C — Coverage per mutation (+ flagged)
     # -----------------------
-    axC.set_axisbelow(True)
-    axC.grid(True, axis="y", ls=":", alpha=0.28)
+    axC.set_axisbelow(True); axC.grid(True, axis="y", ls=":", alpha=0.28)
 
     order = (
         site_df.groupby("mutation")["coverage"]
@@ -2539,7 +2680,7 @@ def site_analysis_panel(
             data=site_df, order=order, ax=axC,
             color="skyblue", showfliers=False
         )
-        # overlay points: swarm for small data, strip for larger
+        # Overlay: swarm for small data, strip for larger
         n_points = int(len(site_df)); n_cat = int(len(order))
         avg_per_cat = n_points / max(1, n_cat)
         if avg_per_cat <= 200 and n_cat <= 30:
@@ -2565,8 +2706,8 @@ def site_analysis_panel(
         axC.set_xticks(np.arange(1, len(order) + 1))
         axC.set_xticklabels(order)
 
-    axC.set_title("Per-mutation coverage")
-    axC.set_ylabel("Coverage")
+    axC.set_title("C. Per-mutation coverage")
+    axC.set_ylabel("Coverage"); axC.set_xlabel("Mutation")
     rot = 90 if len(order) > 20 else 45
     for lbl in axC.get_xticklabels():
         lbl.set_rotation(rot); lbl.set_horizontalalignment("right")
@@ -2578,7 +2719,6 @@ def site_analysis_panel(
             if mut in flagged_muts:
                 axC.axvspan(xi - 0.5, xi + 0.5, color="mistyrose", alpha=0.6, zorder=0)
 
-    # Legend C
     handles_C, labels_C = [], []
     if len(flagged_muts) > 0:
         handles_C.append(Patch(facecolor="mistyrose", edgecolor="red")); labels_C.append("Flagged locus")
@@ -2587,18 +2727,16 @@ def site_analysis_panel(
     legC.legend(
         handles_C, labels_C, loc="center", ncol=ncols,
         frameon=True, fancybox=True, framealpha=0.96, edgecolor="0.6",
-        fontsize=8.2, handletextpad=0.7, columnspacing=1.3, borderpad=0.7
+        fontsize=8.2, handletextpad=0.7, columnspacing=1.3, borderpad=0.8
     ).set_title("Coverage bias", prop={"size": 9.2})
 
     # -----------------------
     # Panel D — Lineage signature presence (weighted)
     # -----------------------
-    axD.set_axisbelow(True)
-    axD.grid(True, ls=":", alpha=0.28)
+    axD.set_axisbelow(True); axD.grid(True, ls=":", alpha=0.28)
 
     dates = sorted(site_df["date"].dropna().unique())
-    handles_D: List[object] = []
-    labels_D:  List[str]    = []
+    handles_D: List[object] = []; labels_D: List[str] = []
 
     for lin, mw in sorted(lineage_to_weights.items()):
         series = []
@@ -2610,7 +2748,7 @@ def site_analysis_panel(
             present_w = 0.0
             for mut, w in mw.items():
                 gg = gdt[gdt["mutation"] == mut]
-                if gg.empty():
+                if gg.empty:
                     continue
                 csum = float(gg["coverage"].sum())
                 afw  = float((gg["af_obs"] * gg["coverage"]).sum() / max(csum, 1.0))
@@ -2621,17 +2759,13 @@ def site_analysis_panel(
             sc = axD.scatter(dates, series, s=20, alpha=0.9, label=lin, rasterized=True)
             handles_D.append(sc); labels_D.append(lin)
 
+    axD.set_title("D. Lineage signature presence (weighted)")
     axD.set_ylabel("Fraction of signature mutations detected")
     axD.set_ylim(0, 1.05)
-    axD.set_title("Lineage signature presence (weighted)")
     if (date_min is not None) and (date_max is not None):
-        axD.set_xlim(date_min, date_max)
-        axD.xaxis.set_major_locator(date_locator)
-        axD.xaxis.set_major_formatter(date_formatter)
+        axD.set_xlim(date_min, date_max); axD.xaxis.set_major_locator(date_locator); axD.xaxis.set_major_formatter(date_formatter)
+    axD.set_xlabel("Date")
 
-    axC.set_xlabel("Date"); axD.set_xlabel("Date")
-
-    # Legend D (cap)
     if labels_D:
         MAX_D = 28
         if len(labels_D) > MAX_D:
@@ -2641,7 +2775,7 @@ def site_analysis_panel(
         legD.legend(
             handles_D, labels_D, loc="center", ncol=ncols,
             frameon=True, fancybox=True, framealpha=0.96, edgecolor="0.6",
-            fontsize=8.2, handletextpad=0.7, columnspacing=1.3, borderpad=0.7
+            fontsize=8.2, handletextpad=0.7, columnspacing=1.3, borderpad=0.8
         ).set_title("Lineages", prop={"size": 9.2})
     else:
         legD.text(0.5, 0.5, "No lineage signal", ha="center", va="center", fontsize=8.5)
@@ -2650,15 +2784,12 @@ def site_analysis_panel(
     # Final touches
     # -----------------------
     try:
-        fig.align_ylabels([axA, axC])
-        fig.align_ylabels([axB, axD])
+        fig.align_ylabels([axA]); fig.align_ylabels([axB]); fig.align_ylabels([axC]); fig.align_ylabels([axD])
     except Exception:
         pass
 
-    fig.suptitle(f"Site {site_id} — Analysis panel", fontsize=14.5)
+    fig.suptitle(f"Site {site_id} — Analysis panel", fontsize=14.5, y=0.98)
     return fig
-
-
 
 def site_lineage_index_figure(
     site_df: pd.DataFrame,
@@ -3044,18 +3175,15 @@ def run_preprocessing(cfg: Dict, ctx: RunContext) -> Dict:
     all_lineages = sorted(sigs_df["lineage"].astype(str).unique().tolist()) if "lineage" in sigs_df.columns else []
     mut_to_color, lin_to_color = _build_global_color_maps(all_mutations, all_lineages)
 
-    # ---------------------------
-    # Core figures (IMAGES ONLY)
-    # ---------------------------
+  
+   
     cov_fig = coverage_panel_figure(df_clean, pcfg.ridgeline_sites_max)
     ctx.write_figure("coverage_panel", cov_fig); plt.close(cov_fig)
 
     miss_fig = missingness_heatmap_figure(miss_heat, pcfg.heatmap_mutations_max)
     ctx.write_figure("missingness_heatmap", miss_fig); plt.close(miss_fig)
 
-    # ---------------------------
-    # Site-level figures (IMAGES ONLY)
-    # ---------------------------
+   
     site_variant_keys: List[str] = []
     site_fig_keys: List[str] = []
     site_evo_keys: List[str] = []

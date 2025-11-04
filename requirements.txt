@@ -10,11 +10,19 @@ jsonschema==4.21.1
 tqdm==4.66.5
 numba==0.59.1
 python-dateutil==2.9.0.post0
-jax==0.4.33
-jaxlib==0.4.33
 pydantic==2.9.2
 
-# Modern plotting & color styling (static only; proplot removed to avoid mpl<3.5 pin)
+# JAX (for gradient-based inference and numerical differentiation)
+jax==0.4.33
+jaxlib==0.4.33
+
+# JAX optimization helpers (CPU-safe)
+jaxopt==0.8.3
+optax==0.2.3
+chex==0.1.86
+diffrax==0.5.1
+
+# Modern plotting & scientific palettes
 seaborn==0.13.2
 scienceplots==2.1.1
 colorcet==3.1.0
@@ -22,22 +30,10 @@ cmocean==4.0.3
 palettable==3.3.3
 pycirclize==1.10.1
 
-# JAX optimization & helpers (CPU-safe)
-jaxopt==0.8.3
-optax==0.2.3
-chex==0.1.86
-diffrax==0.5.1
-
-# Faster CPU data plumbing
+# Lightweight data and computation utilities
 polars==1.12.0
-pyarrow==17.0.0
-duckdb==1.1.3
 numexpr==2.10.1
 joblib==1.4.2
 
-# Logging & lightweight profiling
-rich==13.9.2
-loguru==0.7.2
-line-profiler==4.1.3
-scalene
-py-spy
+# Stan-based Bayesian inference
+cmdstanpy==1.2.3

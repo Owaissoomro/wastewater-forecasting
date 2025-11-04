@@ -72,10 +72,6 @@ from stages.preprocessing import run_preprocessing  # type: ignore
 from stages.priors import run_priors  # type: ignore
 from stages.likelihood import run_likelihood  # type: ignore
 from stages.forecast import run_forecast  # type: ignore
-from stages.detection import run_detection  # type: ignore
-from stages.diagnostics import run_diagnostics  # type: ignore
-from stages.benchmarks import run_benchmarks  # type: ignore
-from stages.validation import run_validation  # type: ignore
 
 
 # ===== CONFIG LOADING & VALIDATION =====
@@ -199,16 +195,11 @@ def _get_stage_funcs() -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
         "priors":        run_priors,
         "likelihood":    run_likelihood,
         "forecast":      run_forecast,
-        "detection":     run_detection,
-        "diagnostics":   run_diagnostics,
-        "benchmarks":    run_benchmarks,
-        "validation":    run_validation,
     }
 
 
 def _stage_order() -> List[str]:
-    return ["preprocessing", "priors", "likelihood", "forecast", "detection", "diagnostics", "benchmarks", "validation"]
-
+    return ["preprocessing", "priors", "likelihood"]
 
 def _parse_stage_selection(arg: Optional[str]) -> List[str]:
     if arg is None or arg.strip().lower() in {"", "all"}:
