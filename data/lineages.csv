@@ -1,5 +1,3 @@
-lineage,label,is_voc,notes
-B.1.1.7,B.1.1.7,False,
-B.1.351,B.1.351,False,
-B.1.617.2,B.1.617.2,False,
-P.1,P.1,False,
+version https://git-lfs.github.com/spec/v1
+oid sha256:deb2d489bbf2a46c84b0041caaf17d6dc7d304526c010e45cbf1857a75aa2a89
+size 115

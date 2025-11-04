@@ -1,17 +1,5 @@
-﻿__pycache__/
+﻿.venv/
+__pycache__/
 *.pyc
-.venv/
-venv/
-.env
-.ipynb_checkpoints/
 .DS_Store
 Thumbs.db
-
-# project outputs
-results/
-data/raw/
-data/processed/
-data/external/
-
-# logs & artifacts
-*.jsonl
