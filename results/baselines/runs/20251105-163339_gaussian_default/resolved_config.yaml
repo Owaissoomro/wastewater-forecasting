@@ -1,0 +1,20 @@
+family: gaussian
+label: default
+priors:
+- name: weak_auto
+  mu0: 6342.8153093120745
+  kappa0: 0.001
+  alpha0: 2.0
+  beta0: 1505045445.3152719
+- name: mild_auto
+  mu0: 6342.8153093120745
+  kappa0: 0.1
+  alpha0: 2.0
+  beta0: 1505045445.3152719
+data:
+  data_path: C:\Users\osoom\OneDrive\Desktop\ssssssss\oxbio-variant-forecasting\results\preprocessing\tables\feature_store_snv.csv
+  data_n_rows: 82538
+  data_column: count
+  data_mean: 6342.8153093120745
+  data_var: 1505045445.3152719
+  data_n_obs: 82538

@@ -1,0 +1,9 @@
+{"time": "2025-11-01T22:44:04.986050+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251101T224404_4e255ff6", "stage_seed": 16235765427455, "cfg_digest": "9851e0d5a65d498fcb58bc73c2d2a454a2f9a152a3061d24c6aa35890a9866d9"}}
+{"time": "2025-11-01T22:44:04.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-11-01T22:44:04.987051+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
+{"time": "2025-11-01T22:44:04.988052+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
+{"time": "2025-11-01T22:44:05.489702+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Per-mutation robust MLE → EB", "context": {}}
+{"time": "2025-11-01T22:44:17.691552+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Dynamic smoothing (IEKS RW2+RW1, CT)", "context": {}}
+{"time": "2025-11-01T22:47:37.972051+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Global κ calibration (exact BB mid-P, stratified sample)", "context": {}}
+{"time": "2025-11-01T23:24:41.321104+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Done", "context": {"outdir": "results\\priors\\tables"}}
+{"time": "2025-11-01T23:24:44.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Completed stage 'priors'", "context": {}}

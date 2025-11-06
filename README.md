@@ -1,9 +1,4 @@
-Here’s a **minimal, clean `README.md`** — written in a plain, research-style tone suitable for your repository.
-You can paste it directly into your repo root.
 
----
-
-```markdown
 # Oxford Bio — Wastewater Variant Forecasting
 
 Deterministic,  pipeline for SARS-CoV-2 wastewater variant deconvolution.

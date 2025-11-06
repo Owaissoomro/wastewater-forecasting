@@ -1,17 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Likelihood — Robust Beta–Binomial IRLS + ADMM on Δ (NumPy, strict paths, lean)
-
-Inputs (strict paths; set in YAML under likelihood:):
-  - priors_hyperparams_path: results/priors/priors_hyperparams.csv
-  - priors_time_path:        results/priors/detail_global_timeseries.csv   (optional; omit or empty to disable)
-  - signatures_path:         data/signatures.csv
-  - snv_counts_path:         results/preprocessing/tables/feature_store_snv.csv (optional if prior_only=True)
-
-Outputs (to results/likelihood/tables/):
-  theta_estimates, residuals, objective_trace, signatures_used,
-  overlap_matrix, zscore_diagnostics, simplex_satisfied,
-  (optional) theta_estimates_raw, theta_uncertainty, mutation_leverage
+- θ solved under simplex (sum-to-1, nonnegative), per site × date
+- Signatures S allow a mutation to belong to multiple lineages (row mass capped at 1)
+- GLOBAL column soaks residual row mass (1 - sum_known)+, with tiny ridge for identifiability
+- Uncertainty = equality-constrained Laplace (simplex tangent) + sandwich "meat"
+- Per-site/date z-score MAD calibration (phi >= 1) for conservative bands
 """
 
 from __future__ import annotations
@@ -23,8 +17,9 @@ import pandas as pd
 from pandas.errors import ParserError
 
 EPS = 1e-9
+ACTIVE_EPS = 1e-6
+MADN = 0.6744897501960817  # median(|Z|) for N(0,1)
 REQUIRED_SNV = ["site_id","date","sample_id","mutation","count","coverage"]
-GLOBAL = "__GLOBAL__"
 
 # -------------------- Minimal context fallback --------------------
 try:
@@ -55,9 +50,9 @@ class LikelihoodCfg:
     prior_only_fill_from_counts: bool = True
 
     lambda_ridge: float = 5e-4
-    overlap_penalty_lambda: float = 0.0
+    overlap_penalty_lambda: float = 0.0   # set >0 to discourage collinear lineages
     temporal_smooth_lambda_l2: float = 0.02
-    unknown_extra: float = 0.0
+    unknown_extra: float = 1e-3           # tiny ridge on GLOBAL for identifiability
 
     robust_c: float = 4.685
     prior_jitter_beta0: float = 0.5
@@ -87,48 +82,52 @@ def _cfg_from(lk: Dict[str, Any]) -> LikelihoodCfg:
         if hasattr(base, k): setattr(base, k, v)
     return base
 
-# -------------------- Helpers --------------------
+# -------------------- IO helpers --------------------
 def _read_csv(p: str, **kw) -> pd.DataFrame:
     try: return pd.read_csv(p, low_memory=False, **kw)
     except (ParserError, UnicodeDecodeError, OSError, MemoryError):
         return pd.read_csv(p, low_memory=False, engine="python", **kw)
 
 def _norm_ts(obj) -> Optional[pd.Timestamp]:
-    """Normalize any 'date-like' to midnight Timestamp; unwrap 1-element list/tuple repeatedly."""
     d = obj
-    while isinstance(d, (list, tuple)) and len(d) == 1:
-        d = d[0]
-    try:
-        ts = pd.to_datetime(d, errors="coerce")
-    except Exception:
-        return None
-    if getattr(ts, "ndim", 0) and len(ts) > 0:
-        ts = ts[0]
-    if pd.isna(ts):
-        return None
+    while isinstance(d, (list, tuple)) and len(d) == 1: d = d[0]
+    try: ts = pd.to_datetime(d, errors="coerce")
+    except Exception: return None
+    if getattr(ts, "ndim", 0) and len(ts) > 0: ts = ts[0]
+    if pd.isna(ts): return None
     return pd.Timestamp(ts).normalize()
 
 def _normalize_snv(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns={"site":"site_id","sample":"sample_id"}).copy()
     miss = [c for c in REQUIRED_SNV if c not in df.columns]
-    if miss: raise KeyError(f"SNV table missing: {miss}")
-    df["site_id"] = df["site_id"].astype(str)
+    if miss:
+        raise KeyError(f"SNV table missing: {miss}")
+    df["site_id"]   = df["site_id"].astype(str)
     df["sample_id"] = df["sample_id"].astype(str)
-    df["mutation"] = df["mutation"].astype(str)
-    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
-    if df["date"].isna().any(): raise ValueError("Invalid dates in SNV table.")
-    df["count"] = pd.to_numeric(df["count"], errors="coerce").fillna(0).astype(int)
+    df = _normalize_mutations(df)  # << normalize mutation IDs
+    df["date"]      = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
+    if df["date"].isna().any():
+        raise ValueError("Invalid dates in SNV table.")
+    df["count"]    = pd.to_numeric(df["count"], errors="coerce").fillna(0).astype(int)
     df["coverage"] = pd.to_numeric(df["coverage"], errors="coerce").fillna(0).astype(int)
-    return df[df["coverage"] >= 0].sort_values(["site_id","date","mutation"]).reset_index(drop=True)
+    return (df[df["coverage"] >= 0]
+            .sort_values(["site_id","date","mutation"])
+            .reset_index(drop=True))
+
 
 def _load_counts_strict(p: Optional[str]) -> pd.DataFrame:
-    if not p:
-        raise FileNotFoundError("likelihood.snv_counts_path is required unless prior_only=True")
-    if not os.path.exists(p):
-        raise FileNotFoundError(f"snv_counts_path not found: {p}")
+    if not p: raise FileNotFoundError("likelihood.snv_counts_path is required unless prior_only=True")
+    if not os.path.exists(p): raise FileNotFoundError(f"snv_counts_path not found: {p}")
     return _normalize_snv(_read_csv(p) if p.lower().endswith(".csv") else pd.read_parquet(p))
 
-# -------------------- Priors & signatures (STRICT paths) --------------------
+# -------------------- Priors & signatures --------------------
+# --- Normalize mutation names consistently ---
+def _normalize_mutations(df: pd.DataFrame, col: str = "mutation") -> pd.DataFrame:
+    """Force mutation IDs to a single canonical form so intersections never drop rows."""
+    if col in df.columns:
+        df[col] = df[col].astype(str).str.strip().str.upper()
+    return df
+
 def _load_priors_strict(p: str, ctx: RunContext) -> pd.DataFrame:
     if not p or not os.path.exists(p):
         raise FileNotFoundError(f"Priors missing: {p}")
@@ -136,116 +135,119 @@ def _load_priors_strict(p: str, ctx: RunContext) -> pd.DataFrame:
     df = _read_csv(p)
     if "mutation" not in df.columns:
         raise ValueError("priors_hyperparams.csv needs 'mutation'")
-    df = df.assign(mutation=lambda d: d["mutation"].astype(str)).copy()
+    df = _normalize_mutations(df)  # << normalize mutation IDs
     for col in ["mu_shrunk","mu","kappa_shrunk","kappa","alpha","beta"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
+
 def _select_best_prior_row(g: pd.DataFrame) -> pd.Series:
-    """Choose 1 row per mutation: max kappa_shrunk → max kappa → max (alpha+beta) → first."""
-    if "kappa_shrunk" in g.columns and g["kappa_shrunk"].notna().any():
-        return g.loc[g["kappa_shrunk"].idxmax()]
-    if "kappa" in g.columns and g["kappa"].notna().any():
-        return g.loc[g["kappa"].idxmax()]
+    if "kappa_shrunk" in g.columns and g["kappa_shrunk"].notna().any(): return g.loc[g["kappa_shrunk"].idxmax()]
+    if "kappa" in g.columns and g["kappa"].notna().any(): return g.loc[g["kappa"].idxmax()]
     if ("alpha" in g.columns) and ("beta" in g.columns):
         s = (g["alpha"] + g["beta"]).astype(float)
-        if s.notna().any():
-            return g.loc[s.idxmax()]
+        if s.notna().any(): return g.loc[s.idxmax()]
     return g.iloc[0]
 
 def _mu_kappa(pri: pd.DataFrame, muts: List[str]) -> Tuple[np.ndarray, np.ndarray]:
-    """Build (mu, kappa) aligned to 'muts', resolving duplicate rows per mutation robustly."""
-    if "mutation" not in pri.columns:
-        raise ValueError("priors_hyperparams needs 'mutation'")
-    best_rows: Dict[str, pd.Series] = {}
-    for mut, g in pri.groupby("mutation", sort=False, group_keys=False):
-        best_rows[mut] = _select_best_prior_row(g)
-
-    mu_arr = np.zeros(len(muts), dtype=float)
-    k_arr  = np.zeros(len(muts), dtype=float)
+    if "mutation" not in pri.columns: raise ValueError("priors_hyperparams needs 'mutation'")
+    best_rows: Dict[str, pd.Series] = {mut: _select_best_prior_row(g) for mut, g in pri.groupby("mutation", sort=False)}
+    mu_arr = np.zeros(len(muts), dtype=float); k_arr = np.zeros(len(muts), dtype=float)
     for i, m in enumerate(muts):
         row = best_rows.get(m)
-        if row is None:
-            mu_val, k_val = 0.5, 0.0
+        if row is None: mu_val, k_val = 0.5, 0.0
         else:
-            # mu
-            if "mu_shrunk" in row.index and pd.notna(row["mu_shrunk"]):
-                mu_val = float(row["mu_shrunk"])
-            elif "mu" in row.index and pd.notna(row["mu"]):
-                mu_val = float(row["mu"])
+            if "mu_shrunk" in row.index and pd.notna(row["mu_shrunk"]): mu_val = float(row["mu_shrunk"])
+            elif "mu" in row.index and pd.notna(row["mu"]):            mu_val = float(row["mu"])
             elif ("alpha" in row.index) and ("beta" in row.index) and pd.notna(row["alpha"]) and pd.notna(row["beta"]):
-                tot = float(row["alpha"]) + float(row["beta"])
-                mu_val = float(row["alpha"])/tot if tot > 0 else 0.5
-            else:
-                mu_val = 0.5
-            # kappa
-            if "kappa_shrunk" in row.index and pd.notna(row["kappa_shrunk"]):
-                k_val = float(row["kappa_shrunk"])
-            elif "kappa" in row.index and pd.notna(row["kappa"]):
-                k_val = float(row["kappa"])
+                tot = float(row["alpha"]) + float(row["beta"]); mu_val = float(row["alpha"])/tot if tot>0 else 0.5
+            else: mu_val = 0.5
+            if "kappa_shrunk" in row.index and pd.notna(row["kappa_shrunk"]): k_val = float(row["kappa_shrunk"])
+            elif "kappa" in row.index and pd.notna(row["kappa"]):             k_val = float(row["kappa"])
             elif ("alpha" in row.index) and ("beta" in row.index) and pd.notna(row["alpha"]) and pd.notna(row["beta"]):
                 k_val = float(row["alpha"]) + float(row["beta"]) - 2.0
-            else:
-                k_val = 0.0
-        mu_arr[i] = float(np.clip(mu_val, EPS, 1.0 - EPS))
-        k_arr[i]  = float(max(k_val, 0.0))
+            else: k_val = 0.0
+        mu_arr[i] = float(np.clip(mu_val, EPS, 1.0-EPS)); k_arr[i] = float(max(k_val, 0.0))
     return mu_arr, k_arr
+def _build_S(sig: pd.DataFrame, muts: List[str], ctx: RunContext) -> Tuple[pd.DataFrame, np.ndarray, List[str], List[str]]:
+    """
+    Build signatures matrix S (mutations × lineages).
+    Allows a mutation to appear in multiple lineages. Row mass is capped at 1, and GLOBAL = 1 - row_sum.
+    """
+    # Normalize & dedupe before pivot (prevents silent column-drop from casing mismatches)
+    sig = sig.copy()
+    sig = _normalize_mutations(sig)                 # << normalize mutation IDs
+    sig["lineage"] = sig["lineage"].astype(str).str.strip()
+    sig["weight"]  = pd.to_numeric(sig["weight"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    sig = sig.groupby(["mutation","lineage"], as_index=False)["weight"].max()
 
-def _load_signatures_strict(p: str, ctx: RunContext) -> pd.DataFrame:
-    if not p or not os.path.exists(p):
-        raise FileNotFoundError(f"signatures.csv missing: {p}")
-    ctx.log(level="INFO", message="Using signatures", context={"path": p})
-    s = _read_csv(p)
-    need = {"mutation","lineage","weight"} - set(s.columns)
-    if need: raise ValueError(f"signatures.csv missing cols: {need}")
-    s["mutation"] = s["mutation"].astype(str)
-    s["lineage"]  = s["lineage"].astype(str)
-    s["weight"]   = pd.to_numeric(s["weight"], errors="coerce").fillna(0.0).clip(0.0,1.0)
-    return s.groupby(["mutation","lineage"], as_index=False)["weight"].max()
+    # Ensure reindex target matches normalization
+    muts_up = [str(m).strip().upper() for m in muts]
 
-def _build_S(sig: pd.DataFrame, muts: List[str]) -> Tuple[pd.DataFrame, np.ndarray, List[str], List[str]]:
-    Sdf = sig.pivot_table(index="mutation", columns="lineage", values="weight", fill_value=0.0)
-    Sdf = Sdf.reindex(index=pd.Index(muts), fill_value=0.0)
-    if "GLOBAL" in Sdf.columns: Sdf = Sdf.drop(columns=["GLOBAL"])
-    rs = Sdf.sum(1).astype(float)
-    if (rs>1+1e-12).any(): Sdf.loc[rs>1+1e-12] = Sdf.loc[rs>1+1e-12].div(rs[rs>1+1e-12], axis=0)
-    Sdf["GLOBAL"] = np.clip(1.0 - Sdf.sum(1).values, 0.0, 1.0)
+    Sdf = (sig.pivot_table(index="mutation", columns="lineage", values="weight",
+                           aggfunc="max", fill_value=0.0)
+             .reindex(index=pd.Index(muts_up), fill_value=0.0)
+             .clip(lower=0.0, upper=1.0))
+
+    # Drop all-zero lineage columns (truly unused lineages)
+    zero_cols = Sdf.columns[(Sdf.sum(axis=0) == 0.0)]
+    if len(zero_cols):
+        ctx.log(level="INFO", message="Dropping zero-signal lineages", context={"lineages": list(zero_cols)})
+        Sdf = Sdf.drop(columns=list(zero_cols))
+
+    # Keep only informative mutations
+    row_sum = Sdf.sum(axis=1).astype(float)
+    keep_rows = row_sum > 1e-12
+    dropped = int((~keep_rows).sum())
+    if dropped:
+        ctx.log(level="INFO", message="Dropping non-informative mutations (no lineage signal)", context={"n": dropped})
+    Sdf = Sdf.loc[keep_rows].copy()
+    row_sum = row_sum.loc[keep_rows]
+
+    # Cap row mass at 1.0 then add GLOBAL = 1 - sum_known
+    big = row_sum > 1.0 + 1e-12
+    if big.any():
+        Sdf.loc[big] = Sdf.loc[big].div(row_sum.loc[big], axis=0)
+        row_sum.loc[big] = 1.0
+    Sdf["GLOBAL"] = np.clip(1.0 - row_sum.values, 0.0, 1.0)
+
+    # Mild collinearity check
+    A = Sdf.values
+    if A.shape[1] > 1:
+        col_norm = np.linalg.norm(A, axis=0) + EPS
+        C = (A/col_norm).T @ (A/col_norm)
+        np.fill_diagonal(C, 0.0)
+        if float(np.max(C)) > 0.9999:
+            ctx.log(level="WARNING",
+                    message="Near-duplicate lineage signatures detected; consider overlap_penalty_lambda > 0",
+                    context={"max_cosine": float(np.max(C))})
+
     Sdf = Sdf.sort_index().sort_index(axis=1)
     return Sdf, Sdf.values.astype(float, copy=False), list(Sdf.index), list(Sdf.columns)
+
 
 def _overlap(S: np.ndarray, names: List[str]) -> Tuple[np.ndarray, pd.DataFrame]:
     col_norm = np.linalg.norm(S, axis=0) + EPS
     O = (S/col_norm).T @ (S/col_norm); np.fill_diagonal(O, 1.0)
     return O, pd.DataFrame(np.clip(O,0.0,1.0), index=names, columns=names)
 
-# -------------------- Time-local priors map (STRICT path; optional) --------------------
+# -------------------- Optional time-local priors --------------------
 def _time_local_map_strict(p: Optional[str], ctx: RunContext) -> Tuple[Optional[Dict[Any, pd.DataFrame]], bool]:
-    """
-    Returns:
-      - tmap: Dict with keys:
-          has_site=True  -> (site_id:str, Timestamp)
-          has_site=False -> Timestamp
-      - has_site: whether site_id was present
-    Keys are canonicalized; 'date' normalized to midnight to match SNV dates.
-    """
-    if not p:
-        ctx.log(level="INFO", message="No time-local priors path provided.")
+    if not p or not os.path.exists(p):
+        ctx.log(level="INFO", message="No / missing time-local priors (optional).", context={"path": p})
         return None, False
-    if not os.path.exists(p):
-        ctx.log(level="INFO", message="time-local priors not found (optional)", context={"path": p})
-        return None, False
-
-    ctx.log(level="INFO", message="Using time-local priors", context={"path": p})
     t = _read_csv(p)
     if "date" not in t.columns or "mutation" not in t.columns:
         return None, False
 
     t = t.copy()
-    t["mutation"] = t["mutation"].astype(str)
+    t = _normalize_mutations(t)  # << normalize mutation IDs for map lookup
     t["date"] = pd.to_datetime(t["date"], errors="coerce").dt.normalize()
-    if "mu_t" not in t.columns and "mu" in t.columns:       t["mu_t"]    = t["mu"]
-    if "kappa_t" not in t.columns and "kappa" in t.columns: t["kappa_t"] = t["kappa"]
+    if "mu_t" not in t.columns and "mu" in t.columns:
+        t["mu_t"] = t["mu"]
+    if "kappa_t" not in t.columns and "kappa" in t.columns:
+        t["kappa_t"] = t["kappa"]
 
     cols = ["mutation","mu_t","kappa_t","date"]
     has_site = "site_id" in t.columns
@@ -255,19 +257,38 @@ def _time_local_map_strict(p: Optional[str], ctx: RunContext) -> Tuple[Optional[
 
     t = t[cols].dropna(subset=["date"])
     tmap: Dict[Any, pd.DataFrame] = {}
-
     if has_site:
         for (site_id, dt), sub in t.groupby(["site_id","date"], sort=False):
-            key = (str(site_id), pd.Timestamp(dt))
-            tmap[key] = sub[["mutation","mu_t","kappa_t"]].reset_index(drop=True)
+            tmap[(str(site_id), pd.Timestamp(dt))] = sub[["mutation","mu_t","kappa_t"]].reset_index(drop=True)
     else:
         for dt, sub in t.groupby(["date"], sort=False):
-            key = pd.Timestamp(dt)
-            tmap[key] = sub[["mutation","mu_t","kappa_t"]].reset_index(drop=True)
-
+            tmap[pd.Timestamp(dt)] = sub[["mutation","mu_t","kappa_t"]].reset_index(drop=True)
     return tmap, has_site
 
+
 # -------------------- Math kernels --------------------
+def _sym_inv(A: np.ndarray, jitter: float = 1e-9) -> np.ndarray:
+    A = 0.5 * (A + A.T)
+    try: return np.linalg.inv(A + jitter*np.eye(A.shape[0]))
+    except np.linalg.LinAlgError: return np.linalg.pinv(A + jitter*np.eye(A.shape[0]))
+
+def _eq_constrained_cov(H: np.ndarray, theta: np.ndarray, active_eps: float = ACTIVE_EPS,
+                        sandwich_B: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
+    """Equality-constrained covariance on the simplex tangent (diag, full)."""
+    K = H.shape[0]
+    free = np.flatnonzero(theta > float(active_eps))
+    if free.size == 0: return np.zeros(K), np.zeros((K, K))
+    Hf = H[np.ix_(free, free)]
+    Hinv = _sym_inv(Hf)
+    if sandwich_B is not None:
+        Bf = sandwich_B[np.ix_(free, free)]
+        Hinv = Hinv @ Bf @ Hinv
+    A = np.ones((1, free.size))
+    denom = float(A @ Hinv @ A.T)
+    Sigma_f = Hinv - (Hinv @ A.T) @ (A @ Hinv) / max(denom, 1e-12)
+    Sigma = np.zeros((K, K)); Sigma[np.ix_(free, free)] = 0.5*(Sigma_f + Sigma_f.T)
+    return np.clip(np.diag(Sigma), 0.0, np.inf), Sigma
+
 def _project_simplex(v: np.ndarray) -> np.ndarray:
     v = np.asarray(v, float).ravel()
     u = np.sort(v)[::-1]; cssv = np.cumsum(u)
@@ -277,7 +298,7 @@ def _project_simplex(v: np.ndarray) -> np.ndarray:
     return w/s if s>0 else np.ones_like(w)/len(w)
 
 def _admm_qp_simplex(H: np.ndarray, f: np.ndarray, rho: float, tol: float, iters: int) -> Tuple[np.ndarray,int]:
-    K = H.shape[0]; A = H + rho * np.eye(K)
+    K = H.shape[0]; A = H + rho*np.eye(K)
     try:
         L = np.linalg.cholesky(A + 1e-9*np.eye(K))
         solve = lambda q: np.linalg.solve(L.T, np.linalg.solve(L, q))
@@ -338,7 +359,8 @@ def _solve_site(S: np.ndarray, yL: List[np.ndarray], nL: List[np.ndarray],
             lam_right = float(lam_l2_vec[t])   if (t+1)<T else 0.0
             H = H + (lam_ridge + lam_left + lam_right) * np.eye(K)
             if O_pen is not None and lam_ov>0: H = H + lam_ov * O_pen
-            if unknown_idx is not None and cfg.unknown_extra>0: H[unknown_idx, unknown_idx] += cfg.unknown_extra
+            # tiny ridge on GLOBAL for identifiability
+            if unknown_idx is not None: H[unknown_idx, unknown_idx] += float(max(cfg.unknown_extra, 1e-3))
             if t>0:      f = f + lam_left  * theta[t-1]
             if t+1 < T:  f = f + lam_right * theta[t+1]
             total += 0.5*float(th @ H @ th) - float(f @ th)
@@ -365,17 +387,19 @@ def _solve_site(S: np.ndarray, yL: List[np.ndarray], nL: List[np.ndarray],
         last_H, last_W = Hs, Ws
         if max_change < 5e-6: break
 
+    # uncertainty + leverage
     diag_cov_list = lev_list = None
     if cfg.compute_uncertainty or cfg.compute_leverage:
         diag_cov_list, lev_list = [], []
         for t in range(T):
             H = last_H[t]; W = last_W[t]
-            try: Hinv = np.linalg.inv(H + 1e-9*np.eye(K))
-            except np.linalg.LinAlgError: Hinv = np.linalg.pinv(H)
-            diag_cov_list.append(np.clip(np.diag(Hinv), 0.0, np.inf))
+            B = (S.T @ (W[:, None] * S))  # sandwich "meat"
+            dvar, _ = _eq_constrained_cov(H, theta[t], active_eps=ACTIVE_EPS, sandwich_B=B)
+            diag_cov_list.append(dvar)
             if cfg.compute_leverage:
-                R = (np.sqrt(np.clip(W,0.0,np.inf))[:,None] * S)
-                VH = R @ Hinv
+                R = (np.sqrt(np.clip(W, 0.0, np.inf))[:, None] * S)
+                Hinv_unc = _sym_inv(H)
+                VH = R @ Hinv_unc
                 lev = np.sum(VH * R, axis=1)
                 lev_list.append(np.clip(lev, 0.0, 1.0))
             else:
@@ -388,23 +412,26 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
     cfg = _cfg_from(cfg_in)
     np.random.default_rng(int(cfg.seed))
     ctx.log(level="INFO", message="Likelihood start (strict paths)", context={
-        "prior_only": cfg.prior_only,
         "priors_hyperparams_path": cfg.priors_hyperparams_path,
         "priors_time_path": cfg.priors_time_path,
         "signatures_path": cfg.signatures_path,
         "snv_counts_path": cfg.snv_counts_path,
-        "cwd": os.getcwd(),
+        "prior_only": cfg.prior_only, "cwd": os.getcwd(),
     })
 
-    # --- priors & signatures
+    # priors & signatures
     pri = _load_priors_strict(cfg.priors_hyperparams_path, ctx)
-    muts = pd.Index(pri["mutation"].astype(str).unique()).sort_values().tolist()
-    if not muts: raise RuntimeError("Priors have no mutations.")
+    muts_priors = pd.Index(pri["mutation"].astype(str).unique()).sort_values().tolist()
+    if not muts_priors: raise RuntimeError("Priors have no mutations.")
 
-    sig = _load_signatures_strict(cfg.signatures_path, ctx)
-    Sdf, S, mutations, lineages = _build_S(sig, muts)
-    if set(mutations) != set(muts):
-        missing = sorted(set(muts)-set(mutations)); raise RuntimeError(f"Signatures missing mutations (first 10): {missing[:10]}")
+    sig = _read_csv(cfg.signatures_path)
+    need = {"mutation","lineage","weight"} - set(sig.columns)
+    if need: raise ValueError(f"signatures.csv missing cols: {need}")
+    sig["mutation"] = sig["mutation"].astype(str)
+    sig["lineage"]  = sig["lineage"].astype(str)
+    sig["weight"]   = pd.to_numeric(sig["weight"], errors="coerce").fillna(0.0).clip(0.0,1.0)
+
+    Sdf, S, mutations, lineages = _build_S(sig, muts_priors, ctx)
     ctx.write_table("signatures_used", Sdf.reset_index().rename(columns={"index":"mutation"}))
     O, Odf = _overlap(S, lineages); ctx.write_table("overlap_matrix", Odf)
     O_pen = O if cfg.overlap_penalty_lambda>0 else None
@@ -416,7 +443,7 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
 
     tmap, has_site = _time_local_map_strict(cfg.priors_time_path, ctx)
 
-    # --- counts
+    # counts
     if cfg.prior_only:
         if cfg.snv_counts_path and os.path.exists(cfg.snv_counts_path):
             snv = _normalize_snv(_read_csv(cfg.snv_counts_path))
@@ -426,9 +453,10 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
     else:
         snv = _load_counts_strict(cfg.snv_counts_path)
 
+    # limit counts to informative mutations we kept in S
     snv = snv[snv["mutation"].astype(str).isin(mutations)].copy()
     if snv.empty and not cfg.prior_only:
-        raise RuntimeError("Counts empty after restricting to priors mutations.")
+        raise RuntimeError("Counts empty after restricting to signature mutations.")
     if cfg.aggregate_by_date and not snv.empty:
         snv_use = (snv.groupby(["site_id","date","mutation"], as_index=False)
                       .agg(count=("count","sum"), coverage=("coverage","sum")))
@@ -438,12 +466,12 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
     snv_use = snv_use.sort_values(["site_id","date","mutation"]).reset_index(drop=True)
     ctx.write_table("residuals_input_head", snv_use.head(10))
 
-    # --- sites to fit
+    # sites
     sites = list(snv_use["site_id"].astype(str).unique())
     if cfg.prior_only and tmap is not None and has_site:
         sites = sorted(set(sites) | {k[0] for k in tmap.keys() if isinstance(k, tuple)})
 
-    # --- collect outputs
+    # outputs
     theta_rows: List[Dict[str, Any]] = []
     theta_raw_rows: List[Dict[str, Any]] = []
     theta_sd_rows: List[Dict[str, Any]] = []
@@ -452,35 +480,30 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
     obj_rows: List[Dict[str, Any]] = []
     simplex_ok: List[bool] = []
 
-    # Build canonical snapshot list: (date_key: Timestamp, df_s: DataFrame)
+    # helpers
     def _snapshots_for_site(df_site: pd.DataFrame) -> List[Tuple[pd.Timestamp, pd.DataFrame]]:
         out: List[Tuple[pd.Timestamp, pd.DataFrame]] = []
         for key, df_s in df_site.groupby(["date"], sort=False):
             dkey = _norm_ts(key)
-            if dkey is None:  # skip invalid keys
-                continue
+            if dkey is None: continue
             out.append((dkey, df_s))
         return out
 
     def _dates_for_site_prior_only(site: str) -> List[pd.Timestamp]:
         if tmap is not None:
-            if has_site:
-                ds = [k[1] for k in tmap.keys() if isinstance(k, tuple) and k[0]==str(site)]
-            else:
-                ds = [k for k in tmap.keys() if not isinstance(k, tuple)]
-        else:
-            ds = []
+            if has_site: ds = [k[1] for k in tmap.keys() if isinstance(k, tuple) and k[0]==str(site)]
+            else:        ds = [k for k in tmap.keys() if not isinstance(k, tuple)]
+        else: ds = []
         if (not ds) and cfg.prior_only_fill_from_counts:
             ds = list(snv_use.loc[snv_use["site_id"]==site,"date"].unique())
-        if not ds:
-            ds = [pd.Timestamp("1970-01-01")]
+        if not ds: ds = [pd.Timestamp("1970-01-01")]
         return sorted([_norm_ts(d) or pd.Timestamp("1970-01-01") for d in ds])
 
-    # Lookup into tmap with robust date normalization
     def _time_local_for(site, date_key: pd.Timestamp):
         if tmap is None: return None
         return tmap.get((str(site), date_key)) if has_site else tmap.get(date_key)
 
+    # per-site fitting
     for site in sites:
         df_site = snv_use[snv_use["site_id"]==site].sort_values(["date","mutation"])
         snaps = ([(d, pd.DataFrame()) for d in _dates_for_site_prior_only(site)]
@@ -488,17 +511,12 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
         T = len(snaps)
         if T == 0: continue
 
-        yL: List[np.ndarray] = []
-        nL: List[np.ndarray] = []
-        lamL: List[float] = [0.0]*T
-        theta0: List[np.ndarray] = []
-        prev: Optional[np.ndarray] = None
-        payloads: List[Tuple[pd.Timestamp, pd.DataFrame]] = []
+        yL: List[np.ndarray] = []; nL: List[np.ndarray] = []
+        lamL: List[float] = [0.0]*T; theta0: List[np.ndarray] = []
+        prev: Optional[np.ndarray] = None; payloads: List[Tuple[pd.Timestamp, pd.DataFrame]] = []
 
         for t, (date_key, df_s) in enumerate(snaps):
-            # start from global priors
             mu_use, kap_use = mu_vec.copy(), kap_vec.copy()
-            # possibly override with time-local priors
             pt = _time_local_for(site, date_key)
             if pt is not None and not pt.empty:
                 m2m = dict(zip(pt["mutation"], pd.to_numeric(pt["mu_t"], errors="coerce")))
@@ -528,7 +546,7 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
             yL.append(y); nL.append(n)
             lamL[t] = cfg.temporal_smooth_lambda_l2 / np.sqrt(1.0 + tot_cov / cfg.temporal_cov_scale)
 
-            # warm start
+            # warm start (weighted LS on AF)
             K = S.shape[1]
             if np.sum(w)>0:
                 A = S.T @ (w[:,None]*S) + 1e-9*np.eye(K); b = S.T @ (w*af)
@@ -540,7 +558,6 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
                 th0 = np.ones(K)/K if prev is None else prev
             theta0.append(th0); prev = th0
 
-            # store residual payload with a normalized timestamp
             payloads.append((date_key, pd.DataFrame({
                 "mutation":mutations, "obs_af":obs_af_resid, "coverage":cov_for_resid,
                 "kappa_used":kap_for_resid, "date":[date_key]*len(mutations)
@@ -558,7 +575,12 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
             obj_rows.append({"site_id": site, "iter": it, "objective": float(val)})
 
         for t, (date_key, payload) in enumerate(payloads):
-            th = np.maximum(thetas[t], 0.0); th = th / max(th.sum(), 1.0)
+            th = np.asarray(thetas[t], float)
+            th[~np.isfinite(th)] = 0.0
+            th = np.maximum(th, 0.0)
+            ssum = th.sum()
+            th = th/ssum if ssum>0 else np.ones_like(th)/len(th)  # **hard simplex**
+
             p  = np.clip(S @ th, EPS, 1-EPS)
 
             dct_obs = payload.set_index("mutation")["obs_af"].to_dict()
@@ -592,7 +614,7 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
 
             simplex_ok.append((abs(np.sum(th)-1.0)<=1e-8) and np.all(th>=-1e-8))
 
-    # assemble + write
+    # assemble + invariants
     theta_df = pd.DataFrame(theta_rows).sort_values(["site_id","date","sample_id","lineage"])
     theta_raw_df = pd.DataFrame(theta_raw_rows).sort_values(["site_id","date","sample_id","lineage"])
     theta_sd_df = pd.DataFrame(theta_sd_rows).sort_values(["site_id","date","sample_id","lineage"])
@@ -600,6 +622,13 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
     residuals_df = pd.DataFrame(resid_rows).sort_values(["site_id","date","sample_id","mutation"])
     obj_df = pd.DataFrame(obj_rows).sort_values(["site_id","iter"])
 
+    # invariant: θ sums to 1 per (site,date)
+    if not theta_df.empty:
+        max_dev = float(theta_df.groupby(["site_id","date"])["theta"].sum().sub(1.0).abs().max())
+        if max_dev > 1e-6:
+            ctx.log(level="WARNING", message="θ simplex violation detected", context={"max_abs_sum_minus_1": max_dev})
+
+    # attach median coverage if available
     try:
         med_cov = (snv_use.groupby(["site_id","date"])["coverage"].median().reset_index().rename(columns={"coverage":"median_coverage"}))
         if not theta_df.empty and not med_cov.empty:
@@ -607,18 +636,33 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
     except Exception:
         pass
 
+    # z-scores + phi calibration (phi >= 1)
+    zdf = None
+    try:
+        if not residuals_df.empty:
+            zdf = _zscore_df(residuals_df)
+            phi = (zdf.groupby(["site_id","date"])["z"]
+                     .apply(lambda s: float(np.nanmedian(np.abs(s)) / MADN))
+                     .reset_index(name="phi"))
+            phi["phi"] = phi["phi"].replace([np.inf, -np.inf], np.nan).fillna(1.0).clip(lower=1.0)
+            if not theta_sd_df.empty:
+                theta_sd_df = theta_sd_df.merge(phi, on=["site_id","date"], how="left")
+                theta_sd_df["phi"] = theta_sd_df["phi"].fillna(1.0)
+                theta_sd_df["theta_sd"] = theta_sd_df["theta_sd"] * np.sqrt(theta_sd_df["phi"])
+                theta_sd_df = theta_sd_df.drop(columns=["phi"])
+    except Exception as e:
+        ctx.log(level="WARNING", message="Z-score/dispersion calibration failed", context={"error": str(e)})
+
+    # write
     ctx.write_table("theta_estimates", theta_df)
     if not theta_raw_df.empty: ctx.write_table("theta_estimates_raw", theta_raw_df)
     if not theta_sd_df.empty:  ctx.write_table("theta_uncertainty", theta_sd_df)
     if not leverage_df.empty:  ctx.write_table("mutation_leverage", leverage_df)
     ctx.write_table("residuals", residuals_df)
     ctx.write_table("objective_trace", obj_df)
-
-    try:
-        zdf = _zscore_df(residuals_df)
-        ctx.write_table("zscore_diagnostics", zdf[["site_id","date","sample_id","mutation","z","coverage","pred_af","obs_af","kappa_used"]])
-    except Exception as e:
-        ctx.log(level="WARNING", message="Z-score diagnostics failed", context={"error": str(e)})
+    if zdf is not None:
+        try: ctx.write_table("zscore_diagnostics", zdf[["site_id","date","sample_id","mutation","z","coverage","pred_af","obs_af","kappa_used"]])
+        except Exception: pass
 
     met = pd.DataFrame({"simplex_satisfied":[bool(np.all(simplex_ok))],"fraction_ok":[float(np.mean(simplex_ok))]})
     try: ctx.write_metrics("simplex_satisfied", met)
@@ -629,18 +673,19 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
         "# Likelihood (NumPy, strict paths)",
         f"- samples: {int(theta_df[['site_id','date','sample_id']].drop_duplicates().shape[0]) if not theta_df.empty else 0}",
         f"- sites: {theta_df['site_id'].nunique() if not theta_df.empty else 0}, lineages: {len(lineages)}",
-        f"- prior_only={cfg.prior_only}, ridge={cfg.lambda_ridge:g}, L2={cfg.temporal_smooth_lambda_l2:g}, overlap={cfg.overlap_penalty_lambda:g}",
+        f"- ridge={cfg.lambda_ridge:g}, L2={cfg.temporal_smooth_lambda_l2:g}, overlap={cfg.overlap_penalty_lambda:g}",
         f"- MAE={float(np.mean(np.abs(r))) if r.size else float('nan'):.4f}, RMSE={float(np.sqrt(np.mean(r**2))) if r.size else float('nan'):.4f}",
+        "- Uncertainty: constrained Laplace + sandwich + MAD(phi) calibration (phi ≥ 1).",
     ]
     ctx.write_report("\n".join(report))
 
-    tables = ["theta_estimates","residuals","objective_trace","signatures_used","overlap_matrix","zscore_diagnostics","simplex_satisfied"]
+    tables = ["theta_estimates","residuals","objective_trace","signatures_used","overlap_matrix","simplex_satisfied"]
     if not theta_raw_df.empty: tables.append("theta_estimates_raw")
     if not theta_sd_df.empty:  tables.append("theta_uncertainty")
+    if zdf is not None:        tables.append("zscore_diagnostics")
     if not leverage_df.empty:  tables.append("mutation_leverage")
     gc.collect()
     return {"tables": tables, "figures": [], "report": True}
-
 
 # optional smoke test
 if __name__ == "__main__":
@@ -648,14 +693,14 @@ if __name__ == "__main__":
     cfg = {"likelihood": {
         "seed": 12345,
         "priors_hyperparams_path": "results/priors/priors_hyperparams.csv",
-        "priors_time_path": "results/priors/detail_global_timeseries.csv",  # or "" to disable
+        "priors_time_path": "results/priors/detail_global_timeseries.csv",
         "signatures_path": "data/signatures.csv",
         "snv_counts_path": "results/preprocessing/tables/feature_store_snv.csv",
         "prior_only": False,
         "prior_only_fill_from_counts": True,
         "robust_c": 4.685, "prior_jitter_beta0": 0.5,
         "temporal_smooth_lambda_l2": 0.02, "lambda_ridge": 5e-4,
-        "overlap_penalty_lambda": 0.0, "unknown_extra": 0.0,
+        "overlap_penalty_lambda": 0.0, "unknown_extra": 1e-3,
         "irls_max_iter": 5, "admm_max_iter": 200, "admm_tol": 1e-6,
         "admm_rho": 1.0, "admm_adaptive_rho": True, "admm_rho_floor": 1e-6, "admm_rho_ceil": 1e6,
         "aggregate_by_date": True, "compute_uncertainty": True, "compute_leverage": True,

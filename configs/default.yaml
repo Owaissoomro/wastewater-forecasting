@@ -44,52 +44,73 @@ logging:
   flush_seconds: 0.0
   filename_prefix: logs
 
-# ---------------------------
-# Preprocessing 
-# ---------------------------
 preprocessing:
-  seed: 12345
-  min_coverage: 60
-  left_censor_af: 0.010
+  lean: true
+  png_only: true
+  figure_dpi: 120
+  png_compress_level: 9
+  scatter_max_points: 50000
+  kde_max_n: 50000
+  ecdf_points_per_site: 256
+  site_max: 12
+  max_lineages_per_site: 4
+
+  min_coverage: 50
+  left_censor_af: 0.01
   min_alt_count: 2
   bias_dropout_quantile: 0.10
   bias_min_highcov_quantile: 0.70
-  bias_af_pos_rate_max: 0.010
-  ridgeline_sites_max: 18
-  heatmap_mutations_max: 220
-
-
-# ---------------------------
-preprocessing:
-  seed: 12345
-
-  # Keep-all hygiene (don’t drop rows; priors stage will handle coverage hygiene)
-  min_coverage: 1
-  left_censor_af: 0.01
-  min_alt_count: 1
-
-  # Optional bias summaries (won’t drop rows)
-  bias_dropout_quantile: 0.10
-  bias_min_highcov_quantile: 0.70
   bias_af_pos_rate_max: 0.01
+  ridgeline_sites_max: 6
+  heatmap_mutations_max: 120
 
-  # Plot sizing (doesn’t affect priors)
-  ridgeline_sites_max: 15
-  heatmap_mutations_max: 200
+  # Skip the heaviest figures by default (enable if you need them)
+  skip_figures: ["coverage_violin", "ecdf_by_site"]
+
+  emit_report: false
+
+output:
+  figures_dir: results/preprocessing/figures
+
+data:
+  jahn_like: data/jahn_like.csv
+  signatures: data/signatures.csv
+  lineages: data/lineages.csv
 
 priors:
+  # IO
   results_root: results
   data_root: data
+
+  # Robustness to extreme depths
   cap_coverage_quantile: 0.99
 
-  # smoothing strength for day-wise logit(μ_t); higher => smoother trend
+  # Daily smoother (RW2 on logit μ_t) — correct uncertainty is handled in code
   rw2_penalty: 10.0
 
-  # κ search bounds (global per mutation)
-  kappa_lo: 0.05
-  kappa_hi: 100.0
+  # Dispersion bounds for κ(μ) (allow very heavy tails at tiny μ)
+  kappa_lo: 1e-6
+  kappa_hi: 150.0
 
+  # Mutations with fewer days are skipped
   min_dates: 2
+
+  # Zero-inflated BB EM iterations (enough to stabilize π and μ_t)
+  em_iters: 6
+
+  # μ calibration & κ(μ) grid (finer grid improves continuity)
+  use_mu_calibration: true
+  calibration_bins: 50
+
+  # μ floor to prevent 1-of-1 pathologies (μ ≥ mu_floor_c / n)
+  mu_floor_c: 6.0
+
+  # Per-μ-decile predictive coverage calibration (mixture) — deterministic
+  target_coverages: [0.50, 0.90]      # hit 50% & 90% within each μ-decile
+  coverage_tolerance: 0.01            # ±1% tolerance per target
+  tau_bounds: [0.1, 60.0]             # τ search range per decile (κ' = κ / τ)
+  tau_bisect_max_iter: 18             # stable, fast convergence
+  min_rows_per_bin: 200               # decile must have enough rows for reliable τ
 
 # ---------------------------
 likelihood:
@@ -138,3 +159,56 @@ likelihood:
   prior_kappa_scale: 1.0
   prior_kappa_cap: .inf
   temporal_cov_scale: 10000.0
+
+
+# ---------------------------
+# Baselines (priors × likelihoods)
+# ---------------------------
+baseline:
+  # Where to write artifacts (this stage will create: results/baselines/{tables,metrics,logs,figures,runs}/…)
+  save_root: results
+
+  # Optional label appended to run folder names
+  label: default
+
+  # ---------- Input to baseline ----------
+  # ---------------------------
+# Baselines (priors × likelihoods)
+# ---------------------------
+baseline:
+  save_root: results
+  label: default
+
+  # Input (autodetect works; explicit keeps things deterministic)
+  data: results/preprocessing/tables/feature_store_snv.csv
+
+  # Run ALL baseline families (binomial, poisson, gaussian, bernoulli)
+  family: all
+  # or: families: [binomial, poisson, gaussian]  # choose subset
+
+  # For binomial (recommended for SNV counts with coverage)
+  count_column: count
+  size_column: coverage
+  drop_constant: true      # primary 'log_evidence' has the comb. constant removed; raw saved too
+
+  # Validation / options
+  grid_check: true
+  grid_points: 4000
+
+  # Candidate priors
+  baselines:
+    binomial:
+      - {name: jeffreys, alpha: 0.5, beta: 0.5}
+      - {name: uniform,  alpha: 1.0, beta: 1.0}
+      - {name: beta22,   alpha: 2.0, beta: 2.0}
+    poisson:
+      - {name: gamma_1_1_rate, alpha: 1.0, beta: 1.0}
+      - {name: gamma_2_1_rate, alpha: 2.0, beta: 1.0}
+      - {name: gamma_3_1_rate, alpha: 3.0, beta: 1.0}
+    gaussian:
+      - {name: weak_auto, mu0: auto_mean, kappa0: 1.0e-3, alpha0: 2.0, beta0: auto_scale}
+      - {name: mild_auto, mu0: auto_mean, kappa0: 1.0e-1, alpha0: 2.0, beta0: auto_scale}
+    bernoulli:
+      - {name: jeffreys, alpha: 0.5, beta: 0.5}
+      - {name: uniform,  alpha: 1.0, beta: 1.0}
+      - {name: beta22,   alpha: 2.0, beta: 2.0}

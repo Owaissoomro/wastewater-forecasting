@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Wright–Fisher Variant Forecasting — Full Pipeline Runner (single, correct version)
+Wright–Fisher Variant Forecasting — Minimal Pipeline Runner
 
 Stages (canonical + aliases):
   preprocessing (prep)
   priors        (prior)
   likelihood    (like, deconv)
-  forecast      (fore)
-  detection     (detect)
-  diagnostics   (diag)
-  benchmarks    (bench)
-  validation    (val, validate)
+  baseline      (base, baselines)
 """
 
 from __future__ import annotations
@@ -71,7 +67,7 @@ from utils.run import RunContext  # type: ignore
 from stages.preprocessing import run_preprocessing  # type: ignore
 from stages.priors import run_priors  # type: ignore
 from stages.likelihood import run_likelihood  # type: ignore
-from stages.forecast import run_forecast  # type: ignore
+from stages.baseline import run_baseline  # type: ignore
 
 
 # ===== CONFIG LOADING & VALIDATION =====
@@ -115,9 +111,8 @@ def load_and_validate_config(paths: List[Path], schema_path: Path) -> Dict[str, 
     """
     Load & merge configs (later files override earlier), then validate.
 
-    Your utils.config.load_config expects a single path (or mapping), *not* a list.
-    We call it once per file and deep-merge results; then validate with
-    utils.config.validate_config if available, else JSON Schema.
+    Prefer utils.config.load_config per file (if available), else YAML loader.
+    Then validate with utils.config.validate_config or JSON Schema.
     """
     # resolve relative paths to repo root
     resolved: List[Path] = []
@@ -155,11 +150,10 @@ def load_and_validate_config(paths: List[Path], schema_path: Path) -> Dict[str, 
     validated = False
     if utils_validate_config is not None:
         try:
-            utils_validate_config(cfg, schema_path=str(schema_path))  # most repos accept this
+            utils_validate_config(cfg, schema_path=str(schema_path))  # common signature
             validated = True
         except TypeError:
-            # some older validators accept (cfg, schema_path) positional
-            utils_validate_config(cfg, str(schema_path))  # type: ignore
+            utils_validate_config(cfg, str(schema_path))  # legacy signature
             validated = True
         except Exception:
             validated = False
@@ -178,11 +172,7 @@ def _normalize_stage_name(name: str) -> str:
         "preprocessing": "preprocessing", "prep": "preprocessing",
         "priors": "priors", "prior": "priors",
         "likelihood": "likelihood", "like": "likelihood", "deconv": "likelihood",
-        "forecast": "forecast", "fore": "forecast",
-        "detection": "detection", "detect": "detection",
-        "diagnostics": "diagnostics", "diag": "diagnostics",
-        "benchmarks": "benchmarks", "bench": "benchmarks",
-        "validation": "validation", "validate": "validation", "val": "validation",
+        "baseline": "baseline", "baselines": "baseline", "base": "baseline",
     }
     if key not in aliases:
         raise ValueError(f"Unknown stage: {name}")
@@ -194,12 +184,14 @@ def _get_stage_funcs() -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
         "preprocessing": run_preprocessing,
         "priors":        run_priors,
         "likelihood":    run_likelihood,
-        "forecast":      run_forecast,
+        "baseline":      run_baseline,
     }
 
 
 def _stage_order() -> List[str]:
-    return ["preprocessing", "priors", "likelihood"]
+    # default 'all' order runs baseline last
+    return ["preprocessing", "priors", "likelihood", "baseline"]
+
 
 def _parse_stage_selection(arg: Optional[str]) -> List[str]:
     if arg is None or arg.strip().lower() in {"", "all"}:
@@ -240,11 +232,10 @@ def _ctx_log(ctx: Any, level: str, stage: str, message: str,
         fn = getattr(ctx, meth, None)
         if callable(fn):
             try:
-                fn(record)
-                return
+                fn(record); return
             except Exception:
                 continue
-    # no-op if no logging method
+    # if no logger available: no-op
 
 
 # ===== ORCHESTRATION =====
@@ -258,7 +249,6 @@ def run_pipeline(config_paths: List[Path], stages: List[str], seed_override: Opt
     run_cfg = cfg.get("run", {}) if isinstance(cfg.get("run"), dict) else {}
     seed = int(seed_override if seed_override is not None else run_cfg.get("seed", 12345))
     set_global_seeds(seed)
-
     set_matplotlib_style()
 
     run = RunContext.start(cfg)
@@ -309,12 +299,12 @@ def _print_summary(stage_dirs: Dict[str, Path]) -> None:
 
 def main(argv: Optional[Iterable[str]] = None) -> None:
     repo_root = _REPO_ROOT
-    parser = argparse.ArgumentParser(description="Wright–Fisher Variant Forecasting — Pipeline Runner")
+    parser = argparse.ArgumentParser(description="Wright–Fisher Variant Forecasting — Pipeline Runner (minimal)")
     parser.add_argument("-c", "--config", dest="configs", action="append", default=None,
                         help="Path to YAML config (repeatable). Defaults to configs/default.yaml under repo root.")
     parser.add_argument("--stages", type=str, default="all",
-                        help=("Comma-separated list or 'all'. Valid: preprocessing,priors,likelihood,forecast,"
-                              "detection,diagnostics,benchmarks,validation. Aliases supported."))
+                        help=("Comma-separated list or 'all'. "
+                              "Valid: preprocessing,priors,likelihood,baseline. Aliases supported."))
     parser.add_argument("--seed", type=int, default=None, help="Override random seed from config.")
     args = parser.parse_args(list(argv) if argv is not None else None)
 

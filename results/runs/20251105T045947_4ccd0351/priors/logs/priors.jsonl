@@ -1,0 +1,6 @@
+{"time": "2025-11-05T04:59:47.923778+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251105T045947_4ccd0351", "stage_seed": 16235189736358, "cfg_digest": "c73df7e9658959ee8a4166bd11daf550a9ac3b8823c638efadcf72222807b361"}}
+{"time": "2025-11-05T04:59:47.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-11-05T04:59:47.926092+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
+{"time": "2025-11-05T04:59:47.927092+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
+{"time": "2025-11-05T04:59:48.097213+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:E:P71L", "context": {}}
+{"time": "2025-11-05T04:59:52.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "operands could not be broadcast together with shapes (299,) (1237,) "}}

@@ -1,0 +1,18 @@
+family: poisson
+label: default
+priors:
+- name: gamma_1_1_rate
+  alpha: 1.0
+  beta: 1.0
+- name: gamma_2_1_rate
+  alpha: 2.0
+  beta: 1.0
+- name: gamma_3_1_rate
+  alpha: 3.0
+  beta: 1.0
+data:
+  data_path: C:\Users\osoom\OneDrive\Desktop\ssssssss\oxbio-variant-forecasting\results\preprocessing\tables\feature_store_snv.csv
+  data_n_rows: 82538
+  data_column: count
+  data_sum_x: 523523290.0
+  data_n_obs: 82538

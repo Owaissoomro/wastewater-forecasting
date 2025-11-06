@@ -1,0 +1,7 @@
+{"time": "2025-10-26T20:54:13.275487+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251026T205005_5ed1b27a", "stage_seed": 16239010106080, "cfg_digest": "503b4778b808ff8c6aadd5998e6e03acc5407102d8615abc35450731201a005c"}}
+{"time": "2025-10-26T20:54:13.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-10-26T20:54:13.350057+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store from preprocessing", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
+{"time": "2025-10-26T20:54:13.375575+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Filtered low coverage", "context": {"min_coverage": 25, "kept": 60251, "dropped": 0}}
+{"time": "2025-10-26T20:54:13.389315+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting Beta–Binomial priors", "context": {"stage": "priors", "n_rows": 60251, "n_mut": 62}}
+{"time": "2025-10-26T20:54:13.399969+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Filtered to signature mutations", "context": {"before": 62, "after": 10}}
+{"time": "2025-10-26T20:55:10.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "int too large to convert to float"}}

@@ -161,7 +161,7 @@ def _apf_step(
       1) Compute look-ahead predictive weights m_i = p(y_t | E[theta_t | theta_{t-1}^i]).
       2) Resample ancestors ∝ w_{t-1,i} * m_i (systematic).
       3) Propagate theta_t^j ~ Dir(kappa * pi(theta_{t-1}^{a_j})).
-      4) Correct weights: w_t^j ∝ p(y_t | theta_t^j) / m_{a_j}.
+      4) Weights: w_t^j ∝ p(y_t | theta_t^j) / m_{a_j}.
     Returns: (particles_t, logw_t, ancestor_idx)
     """
     P, L = particles_tm1.shape

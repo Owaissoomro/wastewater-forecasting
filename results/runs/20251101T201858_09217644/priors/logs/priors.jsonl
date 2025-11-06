@@ -1,0 +1,8 @@
+{"time": "2025-11-01T20:18:58.804866+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251101T201858_09217644", "stage_seed": 16237652871514, "cfg_digest": "9851e0d5a65d498fcb58bc73c2d2a454a2f9a152a3061d24c6aa35890a9866d9"}}
+{"time": "2025-11-01T20:18:58.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-11-01T20:18:58.805866+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
+{"time": "2025-11-01T20:18:58.899689+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded raw data/jahn_like.csv", "context": {"path": "data\\jahn_like.csv"}}
+{"time": "2025-11-01T20:18:58.938120+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Per‑mutation robust MLE → EB full‑cov", "context": {}}
+{"time": "2025-11-01T20:25:11.299004+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Dynamic smoothing (Laplace–Kalman, continuous‑time) for μ_t & κ_t by site×mutation", "context": {}}
+{"time": "2025-11-01T20:27:45.469960+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Estimated process noise", "context": {"q_a_hat": 1e-06, "q_b_hat": 2.16008181798605e-05}}
+{"time": "2025-11-01T20:29:56.712928+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Global κ calibration (exact BB mid‑P)", "context": {}}

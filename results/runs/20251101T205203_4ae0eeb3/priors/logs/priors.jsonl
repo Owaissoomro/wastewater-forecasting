@@ -1,0 +1,5 @@
+{"time": "2025-11-01T20:52:03.958255+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251101T205203_4ae0eeb3", "stage_seed": 16238043430909, "cfg_digest": "9851e0d5a65d498fcb58bc73c2d2a454a2f9a152a3061d24c6aa35890a9866d9"}}
+{"time": "2025-11-01T20:52:03.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-11-01T20:52:03.961959+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
+{"time": "2025-11-01T20:52:04.241199+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store from preprocessing", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
+{"time": "2025-11-01T20:52:04.287991+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Per‑mutation robust MLE → EB full‑cov", "context": {}}

@@ -1,0 +1,5 @@
+{"time": "2025-11-03T03:45:25.618235+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251103T034525_f04fb0e0", "stage_seed": 16235570395067, "cfg_digest": "cbae8697698c5e1d75b186195ddbc0bf7843b29db3efe775a8933b7c09e88cc0"}}
+{"time": "2025-11-03T03:45:25.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-11-03T03:45:25.620234+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
+{"time": "2025-11-03T03:45:25.620234+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
+{"time": "2025-11-03T03:45:25.868612+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Compiling Stan model", "context": {"stan_file": "C:\\Users\\osoom\\OneDrive\\Desktop\\ssssssss\\oxbio-variant-forecasting\\results\\priors\\bb_hds_one_mutation.stan"}}

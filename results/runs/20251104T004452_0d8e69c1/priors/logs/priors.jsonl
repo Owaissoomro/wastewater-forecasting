@@ -1,0 +1,68 @@
+{"time": "2025-11-04T00:44:52.409876+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251104T004452_0d8e69c1", "stage_seed": 16235221854866, "cfg_digest": "cd7a83aa0a46085fb3b4ac85837f09b53a58c2a5dce20acec43921bc9012863c"}}
+{"time": "2025-11-04T00:44:52.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-11-04T00:44:52.412151+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
+{"time": "2025-11-04T00:44:52.412151+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
+{"time": "2025-11-04T00:44:52.591658+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:E:P71L", "context": {}}
+{"time": "2025-11-04T00:44:55.721277+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:M:I82T", "context": {}}
+{"time": "2025-11-04T00:44:58.123422+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:N:D377Y", "context": {}}
+{"time": "2025-11-04T00:44:59.614576+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:N:D3L", "context": {}}
+{"time": "2025-11-04T00:45:10.479497+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:N:D63G", "context": {}}
+{"time": "2025-11-04T00:45:12.258148+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:N:P80R", "context": {}}
+{"time": "2025-11-04T00:45:13.695378+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:N:R203M", "context": {}}
+{"time": "2025-11-04T00:45:15.931156+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:N:S235F", "context": {}}
+{"time": "2025-11-04T00:45:17.939639+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:N:T205I", "context": {}}
+{"time": "2025-11-04T00:45:19.905869+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:A1708D", "context": {}}
+{"time": "2025-11-04T00:45:21.660131+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:I2230T", "context": {}}
+{"time": "2025-11-04T00:45:27.275797+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:K1655N", "context": {}}
+{"time": "2025-11-04T00:45:30.158216+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:K1795Q", "context": {}}
+{"time": "2025-11-04T00:45:33.104410+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:K3353R", "context": {}}
+{"time": "2025-11-04T00:45:35.741044+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:S1188L", "context": {}}
+{"time": "2025-11-04T00:45:38.744229+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:T1001I", "context": {}}
+{"time": "2025-11-04T00:45:42.279352+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF1A:T265I", "context": {}}
+{"time": "2025-11-04T00:45:44.970996+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF3A:Q57H", "context": {}}
+{"time": "2025-11-04T00:45:46.238365+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF3A:S171L", "context": {}}
+{"time": "2025-11-04T00:45:48.167896+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF3A:S26L", "context": {}}
+{"time": "2025-11-04T00:45:49.488685+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF7A:T120I", "context": {}}
+{"time": "2025-11-04T00:45:51.965471+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF7A:V82A", "context": {}}
+{"time": "2025-11-04T00:45:53.904409+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF8:E92K", "context": {}}
+{"time": "2025-11-04T00:45:57.441309+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF8:Q27", "context": {}}
+{"time": "2025-11-04T00:46:00.660544+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF8:R52I", "context": {}}
+{"time": "2025-11-04T00:46:03.722147+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:ORF8:Y73C", "context": {}}
+{"time": "2025-11-04T00:46:07.653368+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:A570D", "context": {}}
+{"time": "2025-11-04T00:46:10.805822+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:A701V", "context": {}}
+{"time": "2025-11-04T00:46:14.934953+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:D1118H", "context": {}}
+{"time": "2025-11-04T00:46:19.050219+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:D215G", "context": {}}
+{"time": "2025-11-04T00:46:36.711007+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:D80A", "context": {}}
+{"time": "2025-11-04T00:46:38.121047+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:D950N", "context": {}}
+{"time": "2025-11-04T00:46:40.202591+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:E484K", "context": {}}
+{"time": "2025-11-04T00:46:42.381251+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:G142D", "context": {}}
+{"time": "2025-11-04T00:46:44.412911+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:K417T", "context": {}}
+{"time": "2025-11-04T00:46:45.502768+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:L452R", "context": {}}
+{"time": "2025-11-04T00:46:46.519120+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:N501Y", "context": {}}
+{"time": "2025-11-04T00:46:47.548849+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:P26S", "context": {}}
+{"time": "2025-11-04T00:46:49.300706+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:P681H", "context": {}}
+{"time": "2025-11-04T00:46:51.163554+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:P681R", "context": {}}
+{"time": "2025-11-04T00:47:02.394127+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:S982A", "context": {}}
+{"time": "2025-11-04T00:47:04.365761+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:T1027I", "context": {}}
+{"time": "2025-11-04T00:47:06.721843+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:T19R", "context": {}}
+{"time": "2025-11-04T00:47:09.228010+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:T20N", "context": {}}
+{"time": "2025-11-04T00:47:11.391274+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:T478K", "context": {}}
+{"time": "2025-11-04T00:47:13.301089+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation AA:S:T716I", "context": {}}
+{"time": "2025-11-04T00:47:15.201330+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C12778T", "context": {}}
+{"time": "2025-11-04T00:47:16.553238+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C13860T", "context": {}}
+{"time": "2025-11-04T00:47:18.092579+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C14676T", "context": {}}
+{"time": "2025-11-04T00:47:19.535688+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C15279T", "context": {}}
+{"time": "2025-11-04T00:47:21.132376+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C26801T", "context": {}}
+{"time": "2025-11-04T00:47:22.441079+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C2749T", "context": {}}
+{"time": "2025-11-04T00:47:24.592088+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C5986T", "context": {}}
+{"time": "2025-11-04T00:47:26.179209+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation C913T", "context": {}}
+{"time": "2025-11-04T00:47:27.603014+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation DEL:11287:9", "context": {}}
+{"time": "2025-11-04T00:47:36.234275+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation DEL:11289:9", "context": {}}
+{"time": "2025-11-04T00:47:39.412450+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation DEL:21769:2", "context": {}}
+{"time": "2025-11-04T00:47:40.692690+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation DEL:21994:1", "context": {}}
+{"time": "2025-11-04T00:47:43.509734+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation DEL:22280:9", "context": {}}
+{"time": "2025-11-04T00:47:47.273771+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation INS:28262:4", "context": {}}
+{"time": "2025-11-04T00:47:55.498066+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation T16176C", "context": {}}
+{"time": "2025-11-04T00:47:57.124768+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting closed-form priors for mutation T733C", "context": {}}
+{"time": "2025-11-04T00:47:58.617385+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Done", "context": {"outdir": "results\\priors"}}
+{"time": "2025-11-04T00:47:58.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Completed stage 'priors'", "context": {}}

@@ -1,0 +1,68 @@
+{"time": "2025-11-05T05:10:43.766576+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251105T051043_1e192be6", "stage_seed": 16238984999527, "cfg_digest": "c73df7e9658959ee8a4166bd11daf550a9ac3b8823c638efadcf72222807b361"}}
+{"time": "2025-11-05T05:10:43.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
+{"time": "2025-11-05T05:10:43.768785+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
+{"time": "2025-11-05T05:10:43.768785+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
+{"time": "2025-11-05T05:10:43.952195+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:E:P71L", "context": {}}
+{"time": "2025-11-05T05:10:47.490043+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:M:I82T", "context": {}}
+{"time": "2025-11-05T05:10:52.232674+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:N:D377Y", "context": {}}
+{"time": "2025-11-05T05:10:55.775678+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:N:D3L", "context": {}}
+{"time": "2025-11-05T05:11:18.285219+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:N:D63G", "context": {}}
+{"time": "2025-11-05T05:11:20.093359+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:N:P80R", "context": {}}
+{"time": "2025-11-05T05:11:21.492865+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:N:R203M", "context": {}}
+{"time": "2025-11-05T05:11:22.893831+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:N:S235F", "context": {}}
+{"time": "2025-11-05T05:11:24.243556+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:N:T205I", "context": {}}
+{"time": "2025-11-05T05:11:25.675961+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:A1708D", "context": {}}
+{"time": "2025-11-05T05:11:27.389578+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:I2230T", "context": {}}
+{"time": "2025-11-05T05:11:30.506074+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:K1655N", "context": {}}
+{"time": "2025-11-05T05:11:32.740028+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:K1795Q", "context": {}}
+{"time": "2025-11-05T05:11:34.774737+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:K3353R", "context": {}}
+{"time": "2025-11-05T05:11:36.331347+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:S1188L", "context": {}}
+{"time": "2025-11-05T05:11:37.726456+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:T1001I", "context": {}}
+{"time": "2025-11-05T05:11:40.781518+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF1A:T265I", "context": {}}
+{"time": "2025-11-05T05:11:44.032139+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF3A:Q57H", "context": {}}
+{"time": "2025-11-05T05:11:46.386045+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF3A:S171L", "context": {}}
+{"time": "2025-11-05T05:11:49.444628+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF3A:S26L", "context": {}}
+{"time": "2025-11-05T05:11:51.404155+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF7A:T120I", "context": {}}
+{"time": "2025-11-05T05:11:54.146837+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF7A:V82A", "context": {}}
+{"time": "2025-11-05T05:11:55.571514+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF8:E92K", "context": {}}
+{"time": "2025-11-05T05:11:56.754842+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF8:Q27", "context": {}}
+{"time": "2025-11-05T05:11:58.600725+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF8:R52I", "context": {}}
+{"time": "2025-11-05T05:12:01.120493+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:ORF8:Y73C", "context": {}}
+{"time": "2025-11-05T05:12:03.801311+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:A570D", "context": {}}
+{"time": "2025-11-05T05:12:05.827124+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:A701V", "context": {}}
+{"time": "2025-11-05T05:12:08.078347+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:D1118H", "context": {}}
+{"time": "2025-11-05T05:12:09.919783+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:D215G", "context": {}}
+{"time": "2025-11-05T05:12:21.216227+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:D80A", "context": {}}
+{"time": "2025-11-05T05:12:23.212323+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:D950N", "context": {}}
+{"time": "2025-11-05T05:12:26.084599+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:E484K", "context": {}}
+{"time": "2025-11-05T05:12:27.874606+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:G142D", "context": {}}
+{"time": "2025-11-05T05:12:29.197427+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:K417T", "context": {}}
+{"time": "2025-11-05T05:12:30.762598+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:L452R", "context": {}}
+{"time": "2025-11-05T05:12:32.420413+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:N501Y", "context": {}}
+{"time": "2025-11-05T05:12:33.987411+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:P26S", "context": {}}
+{"time": "2025-11-05T05:12:36.161117+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:P681H", "context": {}}
+{"time": "2025-11-05T05:12:38.007344+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:P681R", "context": {}}
+{"time": "2025-11-05T05:12:47.451995+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:S982A", "context": {}}
+{"time": "2025-11-05T05:12:49.390186+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:T1027I", "context": {}}
+{"time": "2025-11-05T05:12:51.986263+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:T19R", "context": {}}
+{"time": "2025-11-05T05:12:54.093268+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:T20N", "context": {}}
+{"time": "2025-11-05T05:12:55.936540+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:T478K", "context": {}}
+{"time": "2025-11-05T05:12:57.463875+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation AA:S:T716I", "context": {}}
+{"time": "2025-11-05T05:12:59.351722+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C12778T", "context": {}}
+{"time": "2025-11-05T05:13:01.032746+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C13860T", "context": {}}
+{"time": "2025-11-05T05:13:02.535771+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C14676T", "context": {}}
+{"time": "2025-11-05T05:13:04.509766+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C15279T", "context": {}}
+{"time": "2025-11-05T05:13:06.599195+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C26801T", "context": {}}
+{"time": "2025-11-05T05:13:08.341805+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C2749T", "context": {}}
+{"time": "2025-11-05T05:13:09.838210+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C5986T", "context": {}}
+{"time": "2025-11-05T05:13:10.794036+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation C913T", "context": {}}
+{"time": "2025-11-05T05:13:11.725520+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation DEL:11287:9", "context": {}}
+{"time": "2025-11-05T05:13:20.349427+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation DEL:11289:9", "context": {}}
+{"time": "2025-11-05T05:13:23.683197+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation DEL:21769:2", "context": {}}
+{"time": "2025-11-05T05:13:25.268588+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation DEL:21994:1", "context": {}}
+{"time": "2025-11-05T05:13:27.372761+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation DEL:22280:9", "context": {}}
+{"time": "2025-11-05T05:13:30.591439+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation INS:28262:4", "context": {}}
+{"time": "2025-11-05T05:13:40.403552+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation T16176C", "context": {}}
+{"time": "2025-11-05T05:13:41.738364+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting calibrated priors for mutation T733C", "context": {}}
+{"time": "2025-11-05T05:13:42.957215+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Done", "context": {"outdir": "results\\priors"}}
+{"time": "2025-11-05T05:13:42.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Completed stage 'priors'", "context": {}}

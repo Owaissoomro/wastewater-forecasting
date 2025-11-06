@@ -1,0 +1,4 @@
+{"time": "2025-10-30T22:15:16.549168+00:00", "level": "INFO", "stage": "forecast", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251030T221516_5d6a0239", "stage_seed": 16238903146596, "cfg_digest": "d1287d4e1dd99922736d783b7f5a8ce4e9b722a17c9c0db0f83dd46af8c176d2"}}
+{"time": "2025-10-30T22:15:16.000", "level": "INFO", "stage": "forecast", "site_id": null, "lineage": null, "message": "Starting stage 'forecast'", "context": {"seed": 12345}}
+{"time": "2025-10-30T22:15:16.821+00:00", "level": "INFO", "stage": "forecast", "site_id": "BE - Laupen - ARA Sensetal", "lineage": "", "message": "Starting particle filter for site", "context": {"num_mutations": 10, "num_particles": 1024}}
+{"time": "2025-10-30T22:23:09.000", "level": "ERROR", "stage": "forecast", "site_id": null, "lineage": null, "message": "Stage 'forecast' failed", "context": {"error": "operands could not be broadcast together with shapes (276,) (552,) "}}
