@@ -1,0 +1,5 @@
+{"time": "2025-11-08T05:17:31.595090+00:00", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251108T051731_eafb3190", "stage_seed": 16235112897793, "cfg_digest": "57e45e3c0e46b96a5a48a241be25452538f91a0a1913a2397b694e41ed3d546d"}}
+{"time": "2025-11-08T05:17:31.000", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "Starting stage 'baseline'", "context": {"seed": 42}}
+{"time": "2025-11-08T05:17:31.599499+00:00", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "INFO", "context": {}}
+{"time": "2025-11-08T05:18:59.658323+00:00", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "INFO", "context": {}}
+{"time": "2025-11-08T05:18:59.000", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "Completed stage 'baseline'", "context": {}}

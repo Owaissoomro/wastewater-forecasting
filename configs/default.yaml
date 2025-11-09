@@ -77,40 +77,42 @@ data:
   signatures: data/signatures.csv
   lineages: data/lineages.csv
 
+# config.yaml
+# config.yaml — GOLD DEFAULT
 priors:
   # IO
   results_root: results
   data_root: data
 
-  # Robustness to extreme depths
+  # Tame extreme depths (reduces Newton pathologies, helps calibration)
   cap_coverage_quantile: 0.99
 
-  # Daily smoother (RW2 on logit μ_t) — correct uncertainty is handled in code
-  rw2_penalty: 10.0
+  # RW2 on logit(μ_t) — smooth but responsive
+  rw2_penalty: 0.9    # raise to 1.1 if μ_t looks too wiggly; lower to 0.7 if too flat
 
-  # Dispersion bounds for κ(μ) (allow very heavy tails at tiny μ)
-  kappa_lo: 1e-6
-  kappa_hi: 150.0
+  # κ(μ) bounds — realistic dispersion; avoids near-binomial collapse
+  kappa_lo: 2.0
+  kappa_hi: 150.0     # SAFE cap for WW; only raise if τ≈1.0 everywhere and PIs look too wide
 
-  # Mutations with fewer days are skipped
+  # Skip underinformative mutations
   min_dates: 2
 
-  # Zero-inflated BB EM iterations (enough to stabilize π and μ_t)
-  em_iters: 6
+  # ZI–BB EM (converges stably with the Newton+Armijo RW2)
+  em_iters: 20
 
-  # μ calibration & κ(μ) grid (finer grid improves continuity)
+  # μ calibration & κ grid
   use_mu_calibration: true
   calibration_bins: 50
 
-  # μ floor to prevent 1-of-1 pathologies (μ ≥ mu_floor_c / n)
+  # μ floor (μ ≥ mu_floor_c / n), hard-capped at 5% in code
   mu_floor_c: 6.0
 
-  # Per-μ-decile predictive coverage calibration (mixture) — deterministic
-  target_coverages: [0.50, 0.90]      # hit 50% & 90% within each μ-decile
-  coverage_tolerance: 0.01            # ±1% tolerance per target
-  tau_bounds: [0.1, 60.0]             # τ search range per decile (κ' = κ / τ)
-  tau_bisect_max_iter: 18             # stable, fast convergence
-  min_rows_per_bin: 200               # decile must have enough rows for reliable τ
+  # Per-μ-bin predictive coverage calibration (widen-only; τ ≥ 1)
+  target_coverages: [0.50, 0.90]
+  coverage_tolerance: 0.01
+  tau_bounds: [1.0, 50.0]
+  tau_bisect_max_iter: 24
+  min_rows_per_bin: 200
 
 # ---------------------------
 likelihood:

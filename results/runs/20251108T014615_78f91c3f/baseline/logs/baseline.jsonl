@@ -1,0 +1,4 @@
+{"time": "2025-11-08T01:46:15.829283+00:00", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251108T014615_78f91c3f", "stage_seed": 16236414667840, "cfg_digest": "57e45e3c0e46b96a5a48a241be25452538f91a0a1913a2397b694e41ed3d546d"}}
+{"time": "2025-11-08T01:46:15.000", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "Starting stage 'baseline'", "context": {"seed": 42}}
+{"time": "2025-11-08T01:46:15.832959+00:00", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "INFO", "context": {}}
+{"time": "2025-11-08T01:46:16.000", "level": "ERROR", "stage": "baseline", "site_id": null, "lineage": null, "message": "Stage 'baseline' failed", "context": {"error": "too many indices for array: array is 0-dimensional, but 1 were indexed"}}

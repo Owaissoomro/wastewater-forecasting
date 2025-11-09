@@ -1,0 +1,4 @@
+{"time": "2025-11-08T04:34:01.132083+00:00", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251108T043401_55597e72", "stage_seed": 16237595011504, "cfg_digest": "57e45e3c0e46b96a5a48a241be25452538f91a0a1913a2397b694e41ed3d546d"}}
+{"time": "2025-11-08T04:34:01.000", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "Starting stage 'baseline'", "context": {"seed": 42}}
+{"time": "2025-11-08T04:34:01.136974+00:00", "level": "INFO", "stage": "baseline", "site_id": null, "lineage": null, "message": "INFO", "context": {}}
+{"time": "2025-11-08T04:34:01.000", "level": "ERROR", "stage": "baseline", "site_id": null, "lineage": null, "message": "Stage 'baseline' failed", "context": {"error": "cannot unpack non-iterable float object"}}

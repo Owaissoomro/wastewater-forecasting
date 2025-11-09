@@ -1,7 +1,3 @@
-# stages/forecast.py
-# Forecast stage with Auxiliary Particle Filter + Backward Simulation Smoother.
-# Ensures ALL priors mutations are used by expanding S with a GLOBAL lineage.
-# Posterior predictive draws are vectorized and calibrated (PIT, WAIC).
 
 import sys
 import pathlib
