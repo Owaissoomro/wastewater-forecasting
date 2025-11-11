@@ -1,7 +1,0 @@
-{"time": "2025-11-02T22:38:04.643989+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251102T223804_466b3169", "stage_seed": 16235424398015, "cfg_digest": "5a93b5d14b6939a8eaeb3784ee9d0f95499b72088b1f12c7d7d72ca903dbb3d3"}}
-{"time": "2025-11-02T22:38:04.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
-{"time": "2025-11-02T22:38:04.644987+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
-{"time": "2025-11-02T22:38:04.644987+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
-{"time": "2025-11-02T22:38:04.678372+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Building weights", "context": {}}
-{"time": "2025-11-02T22:38:04.700757+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Compiling Stan model", "context": {"stan_file": "C:\\Users\\osoom\\OneDrive\\Desktop\\ssssssss\\oxbio-variant-forecasting\\results\\priors\\bb_hds_one_mutation.stan"}}
-{"time": "2025-11-02T23:09:51.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "Length of values (0) does not match length of index (4)"}}

@@ -77,42 +77,23 @@ data:
   signatures: data/signatures.csv
   lineages: data/lineages.csv
 
-# config.yaml
-# config.yaml — GOLD DEFAULT
 priors:
-  # IO
   results_root: results
   data_root: data
-
-  # Tame extreme depths (reduces Newton pathologies, helps calibration)
-  cap_coverage_quantile: 0.99
-
-  # RW2 on logit(μ_t) — smooth but responsive
-  rw2_penalty: 0.9    # raise to 1.1 if μ_t looks too wiggly; lower to 0.7 if too flat
-
-  # κ(μ) bounds — realistic dispersion; avoids near-binomial collapse
-  kappa_lo: 2.0
-  kappa_hi: 150.0     # SAFE cap for WW; only raise if τ≈1.0 everywhere and PIs look too wide
-
-  # Skip underinformative mutations
-  min_dates: 2
-
-  # ZI–BB EM (converges stably with the Newton+Armijo RW2)
-  em_iters: 20
-
-  # μ calibration & κ grid
+  cap_coverage_quantile: 0.98
+  rw2_penalty: 7
+  kappa_lo: 3
+  kappa_hi: 140
+  min_dates: 3
+  em_iters: 18
   use_mu_calibration: true
   calibration_bins: 50
-
-  # μ floor (μ ≥ mu_floor_c / n), hard-capped at 5% in code
-  mu_floor_c: 6.0
-
-  # Per-μ-bin predictive coverage calibration (widen-only; τ ≥ 1)
+  mu_floor_c: 7
   target_coverages: [0.50, 0.90]
-  coverage_tolerance: 0.01
-  tau_bounds: [1.0, 50.0]
-  tau_bisect_max_iter: 24
-  min_rows_per_bin: 200
+  coverage_tolerance: 0.02
+  tau_bounds: [1, 24]
+  tau_bisect_max_iter: 28
+  min_rows_per_bin: 300
 
 # ---------------------------
 likelihood:
@@ -163,22 +144,10 @@ likelihood:
   temporal_cov_scale: 10000.0
 
 
-# ---------------------------
-# Baselines (priors × likelihoods)
+
 # ---------------------------
 baseline:
-  # Where to write artifacts (this stage will create: results/baselines/{tables,metrics,logs,figures,runs}/…)
-  save_root: results
-
-  # Optional label appended to run folder names
-  label: default
-
-  # ---------- Input to baseline ----------
-  # ---------------------------
-# Baselines (priors × likelihoods)
-# ---------------------------
-baseline:
-  save_root: results
+  save_root: results/baseline
   label: default
 
   # Input (autodetect works; explicit keeps things deterministic)

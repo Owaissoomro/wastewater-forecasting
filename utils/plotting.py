@@ -1,14 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-utils.plotting — modern, self-contained Matplotlib helpers
+utils.plotting 
 ==========================================================
 
-Clean, dependency-light utilities for consistent, publication-friendly plots.
-- Pure Matplotlib; optionally styles with SciencePlots + seaborn if present.
-- Safe fallbacks when optional packages (scipy, colorcet, seaborn) are missing.
-- No duplicate definitions; tidy __all__ for stable imports.
-
-Exports
 -------
 set_matplotlib_style
 place_legend_below

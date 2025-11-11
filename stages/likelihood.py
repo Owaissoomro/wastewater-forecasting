@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Likelihood — Robust Beta–Binomial IRLS + ADMM on Δ (NumPy, strict paths, lean)
+Likelihood —  Beta–Binomial IRLS + ADMM on Δ (NumPy, strict paths, lean)
 - θ solved under simplex (sum-to-1, nonnegative), per site × date
 - Signatures S allow a mutation to belong to multiple lineages (row mass capped at 1)
 - GLOBAL column soaks residual row mass (1 - sum_known)+, with tiny ridge for identifiability
@@ -21,7 +21,7 @@ ACTIVE_EPS = 1e-6
 MADN = 0.6744897501960817  # median(|Z|) for N(0,1)
 REQUIRED_SNV = ["site_id","date","sample_id","mutation","count","coverage"]
 
-# -------------------- Minimal context fallback --------------------
+# --------------------  context fallback --------------------
 try:
     from utils.run import RunContext  # type: ignore
 except Exception:  # pragma: no cover
@@ -121,7 +121,6 @@ def _load_counts_strict(p: Optional[str]) -> pd.DataFrame:
     return _normalize_snv(_read_csv(p) if p.lower().endswith(".csv") else pd.read_parquet(p))
 
 # -------------------- Priors & signatures --------------------
-# --- Normalize mutation names consistently ---
 def _normalize_mutations(df: pd.DataFrame, col: str = "mutation") -> pd.DataFrame:
     """Force mutation IDs to a single canonical form so intersections never drop rows."""
     if col in df.columns:
@@ -170,6 +169,7 @@ def _mu_kappa(pri: pd.DataFrame, muts: List[str]) -> Tuple[np.ndarray, np.ndarra
             else: k_val = 0.0
         mu_arr[i] = float(np.clip(mu_val, EPS, 1.0-EPS)); k_arr[i] = float(max(k_val, 0.0))
     return mu_arr, k_arr
+
 def _build_S(sig: pd.DataFrame, muts: List[str], ctx: RunContext) -> Tuple[pd.DataFrame, np.ndarray, List[str], List[str]]:
     """
     Build signatures matrix S (mutations × lineages).

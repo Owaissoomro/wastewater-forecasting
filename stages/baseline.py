@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Baseline Evidence Stage (multi-family) — fast, exact, and pipeline-compatible.
-
+Baseline Bayesian evidence & model comparison
 Entry:
     run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]
 
@@ -12,7 +10,7 @@ Families:
 - poisson   (Gamma prior, RATE β)      -> non-negative integer counts
 - gaussian  (Normal–Inverse–Gamma)     -> continuous column
 
-Outputs (overwritten each run) under a single 'baselines' root:
+Outputs (overwritten each run) under a single 'baseline' root:
 tables/
   - baselines_detailed.csv
   - bayes_factors_full.csv
@@ -22,9 +20,9 @@ metrics/
   - baselines_metrics.csv
   - baselines_pit_hist.csv
 
-Folder rule (no duplicated 'baselines'):
+Folder rule (no duplicated 'baseline'):
 - If cfg.baseline.save_root is set -> use it AS-IS
-- Else -> (cfg.io.results_dir or 'results')/baselines
+- Else -> (cfg.io.results_dir or 'results')/baseline
 """
 from __future__ import annotations
 
@@ -37,7 +35,7 @@ import os
 import numpy as np
 import pandas as pd
 from scipy.special import betaln, gammaln, logsumexp
-from scipy.stats import betabinom, nbinom, t as student_t, kstest, norm
+from scipy.stats import betabinom, nbinom, t as student_t, kstest, norm, chisquare
 
 # ---------------- Speed-safe defaults ----------------
 # Cap threads to avoid oversubscription; deterministic runs.
@@ -48,6 +46,11 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 np.seterr(all="ignore")  # safely handle tail behavior; we clip where needed.
+
+# ---------------- Constants ----------------
+# Use singular folder name to match your tree: results\\baseline\\...
+OUT_DIR_NAME = "baseline"
+PIT_BINS = 20  # PIT histogram bins (mid-CDF binned uniformity check)
 
 
 # ============================ Logging ============================
@@ -75,10 +78,18 @@ def _log(ctx: Any, level: str = "INFO", message: str = "", context: Optional[dic
 def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
+def _safe_write_csv(df: pd.DataFrame, path: Path) -> None:
+    """Atomic CSV write to avoid partial files."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    df.to_csv(tmp, index=False)
+    tmp.replace(path)
+
 def _read_csv_any(path: str) -> pd.DataFrame:
     return pd.read_csv(path, low_memory=False)
 
 def _clip01(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    """Clip to (eps, 1-eps) with explicit float dtype."""
     return np.clip(np.asarray(x, float), eps, 1.0 - eps)
 
 def _is_binary(x: np.ndarray) -> bool:
@@ -87,22 +98,43 @@ def _is_binary(x: np.ndarray) -> bool:
 def _is_nonneg_int(x: np.ndarray) -> bool:
     return x.size > 0 and np.all((x >= 0) & np.isfinite(x) & (np.floor(x) == x))
 
+def _sanitize_series(s: pd.Series, fill=0) -> pd.Series:
+    """Coerce to numeric, count bads for logging (filled)."""
+    sn = pd.to_numeric(s, errors="coerce")
+    n_bad = int((~np.isfinite(sn)).sum())
+    if n_bad:
+        # only logging at call sites to include column name
+        pass
+    return sn.fillna(fill)
+
 
 # ============================ Config & IO ============================
 def _cfg_root(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg.get("baseline", cfg or {}) if isinstance(cfg, dict) else {}
 
+
 def _resolve_out_root(cfg: Dict[str, Any]) -> Path:
     """
-    If baseline.save_root is provided, use it as-is; else use (io.results_dir or 'results')/baselines.
+    Always create results/baseline as the output root.
+      - If cfg.baseline.save_root is provided → use that path.
+      - Else → (cfg.io.results_dir or 'results')/baseline.
     """
     io = cfg.get("io", {}) if isinstance(cfg, dict) else {}
     bl = _cfg_root(cfg)
+
+    # if user defines save_root, use it directly
     save_root = bl.get("save_root")
     if isinstance(save_root, str) and save_root.strip():
-        return Path(save_root)
-    base = io.get("results_dir") or "results"
-    return Path(base) / "baselines"
+        base = Path(save_root)
+    else:
+        base = Path(io.get("results_dir") or "results")
+
+    # Always append 'baseline' unless the path already ends with it
+    if base.name.lower() != "baseline":
+        base = base / "baseline"
+
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 def _cfg_data_path(cfg: Dict[str, Any]) -> Optional[str]:
     bl = _cfg_root(cfg)
@@ -113,25 +145,64 @@ def _cfg_data_path(cfg: Dict[str, Any]) -> Optional[str]:
 
 
 # ============================ Input autodetection ============================
-def _find_input(ctx: Any, explicit_path: Optional[str]) -> str:
+def _pick_latest(paths: List[str]) -> str:
+    """
+    Pick the newest file by modification time; ties broken lexicographically.
+    Raises if the list is empty.
+    """
+    if not paths:
+        raise FileNotFoundError("No candidate files to choose from.")
+    return max(paths, key=lambda p: (os.path.getmtime(p), p))
+
+def _find_input(ctx: Any, explicit_path: Optional[str], base_dir: Optional[str]) -> str:
+    """
+    Detect input CSV (prefer newest):
+      1) If cfg.baseline.data is a file that exists -> use it.
+         If it is a glob -> pick newest match.
+      2) Else search {base_dir}/preprocessing/tables/feature_store_snv*.csv (if base_dir given), pick newest.
+      3) Else search results/preprocessing/tables/feature_store_snv*.csv (relative), pick newest.
+      4) Else fallback to data/jahn_like.csv.
+    """
+    # 1) explicit file or glob
     if explicit_path:
         p = Path(explicit_path)
         if p.exists():
-            _log(ctx, "INFO", "Using explicit baseline input", {"path": str(p.resolve())})
-            return str(p)
+            chosen = str(p.resolve())
+            _log(ctx, "INFO", "Using explicit baseline input", {"path": chosen})
+            return chosen
+        if any(ch in explicit_path for ch in "*?[]"):
+            matches = sorted(glob.glob(explicit_path))
+            if matches:
+                chosen = _pick_latest(matches)
+                _log(ctx, "INFO", "Using explicit glob for baseline input", {"chosen": str(Path(chosen).resolve())})
+                return chosen
         _log(ctx, "WARN", "Explicit input not found; falling back", {"path": explicit_path})
 
-    cands = sorted(glob.glob("results/preprocessing/tables/feature_store_snv*.csv"))
-    if cands:
-        _log(ctx, "INFO", "Auto-detected feature store", {"path": cands[0]})
-        return cands[0]
+    # 2) within configured results_dir
+    patterns: List[str] = []
+    if base_dir:
+        patterns.append(str(Path(base_dir) / "preprocessing" / "tables" / "feature_store_snv*.csv"))
 
+    # 3) relative results/ (for when base_dir is not set)
+    patterns.append(str(Path("results") / "preprocessing" / "tables" / "feature_store_snv*.csv"))
+
+    for patt in patterns:
+        cands = sorted(glob.glob(patt))
+        if cands:
+            chosen = _pick_latest(cands)
+            _log(ctx, "INFO", "Auto-detected feature store", {"path": str(Path(chosen).resolve())})
+            return chosen
+
+    # 4) fallback
     fb = Path("data") / "jahn_like.csv"
     if fb.exists():
-        _log(ctx, "INFO", "Falling back to jahn_like.csv", {"path": str(fb)})
+        _log(ctx, "INFO", "Falling back to jahn_like.csv", {"path": str(fb.resolve())})
         return str(fb)
 
-    raise FileNotFoundError("SNV table not found; expected results/.../feature_store_snv*.csv or data/jahn_like.csv")
+    raise FileNotFoundError(
+        "SNV table not found; expected <results_root>/preprocessing/tables/feature_store_snv*.csv "
+        "or data/jahn_like.csv (you can also set cfg.baseline.data)."
+    )
 
 
 # ============================ Column detection ============================
@@ -169,6 +240,22 @@ def _pick_count_size_cols(df: pd.DataFrame, ctx: Any) -> Tuple[str, str]:
         raise KeyError("Need count & size columns (e.g., 'count' and 'coverage') for binomial baseline.")
     return c, n
 
+def _prepare_binomial_arrays(df: pd.DataFrame, c_col: str, n_col: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Prepare Binomial y,n without corrupting information:
+    - Keep n==0 rows as-is (valid, and must be preserved for correct evidence).
+    - Clip y to [0, n].
+    - Return also p_obs computed safely with max(n,1) for metrics only.
+    """
+    y_s = _sanitize_series(df[c_col])
+    n_s = _sanitize_series(df[n_col])
+    y = y_s.astype(np.int64, copy=False).to_numpy()
+    n = n_s.astype(np.int64, copy=False).to_numpy()
+    n = np.clip(n, 0, None)
+    y = np.clip(y, 0, n)
+    p_obs = y / np.maximum(n, 1)
+    return y, n, p_obs
+
 
 # ============================ Evidence (marginal likelihoods) ============================
 def _log_binom_coeff(n: np.ndarray, k: np.ndarray) -> np.ndarray:
@@ -188,19 +275,32 @@ def _evidence_bern_beta(x: np.ndarray, a: float, b: float) -> float:
 
 def _evidence_pois_gamma_rate(x: np.ndarray, a: float, beta_rate: float) -> float:
     N = int(x.size); s = float(np.sum(x))
+    # p(x|a,beta) = beta^a / Gamma(a) * Gamma(a+s) / (beta+N)^(a+s) * 1/prod(x_i!)
     return float(-np.sum(gammaln(x + 1.0)) + a*np.log(beta_rate)
                  - (a + s)*np.log(beta_rate + N) + gammaln(a + s) - gammaln(a))
 
 def _evidence_gauss_nig(x: np.ndarray, mu0: float, k0: float, a0: float, b0: float) -> float:
+    """
+    Exact Normal–Inverse–Gamma marginal evidence:
+    p(x) = (Γ(aN)/Γ(a0)) * (b0^a0 / bN^aN) * sqrt(k0/kN) * π^(−N/2)
+
+    NOTE: constant is π^(−N/2), not (2π)^(−N/2).
+    """
+    x = np.asarray(x, float)
     N = int(x.size)
-    if N == 0: return float("nan")
+    if N == 0:
+        return float("nan")
     xbar = float(np.mean(x))
     sse  = float(np.sum((x - xbar)**2))
     kN = k0 + N
     aN = a0 + 0.5*N
     bN = b0 + 0.5*sse + (k0*N*(xbar - mu0)**2)/(2.0*kN)
-    return float(gammaln(aN) - gammaln(a0) + a0*np.log(b0) - aN*np.log(bN)
-                 + 0.5*(np.log(k0) - np.log(kN)) - 0.5*N*np.log(2*np.pi))
+    return float(
+        gammaln(aN) - gammaln(a0)
+        + a0*np.log(b0) - aN*np.log(bN)
+        + 0.5*(np.log(k0) - np.log(kN))
+        - 0.5*N*np.log(np.pi)  # corrected constant
+    )
 
 
 # ============================ Beta–Binomial fallbacks ============================
@@ -214,11 +314,17 @@ def _bb_ppf_normal(q: float, n: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.
     m, v = _bb_mean_var(n, a, b)
     z = norm.ppf(q)
     qv = m + z*np.sqrt(np.maximum(v, 1e-18))
-    qv += np.sign(qv - m)*0.5
+    qv += np.sign(qv - m)*0.5  # continuity correction
     return np.clip(np.round(qv), 0, n).astype(int)
 
 def _safe_bb_ppf(q: float, n: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    n = np.asarray(n, int); shape = n.shape
+    """
+    Beta–Binomial percentile:
+    - Try SciPy's exact ppf
+    - Fall back to Normal approximation with continuity correction in extreme tails
+    """
+    n = np.asarray(n, int)
+    shape = n.shape
     a = np.broadcast_to(np.asarray(a, float), shape)
     b = np.broadcast_to(np.asarray(b, float), shape)
     try:
@@ -230,7 +336,7 @@ def _safe_bb_ppf(q: float, n: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.nd
     bad = ~np.isfinite(r)
     if np.any(bad):
         r[bad] = _bb_ppf_normal(q, n[bad], a[bad], b[bad])
-    return np.clip(r, 0, n).astype(int)
+    return np.clip(r, 0, n).astype(int, copy=False)
 
 def _bb_cdf_normal(y: np.ndarray, n: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     y = np.asarray(y, float); n = np.asarray(n, float)
@@ -240,7 +346,14 @@ def _bb_cdf_normal(y: np.ndarray, n: np.ndarray, a: np.ndarray, b: np.ndarray) -
     return _clip01(norm.cdf(z), 1e-12)
 
 def _safe_bb_cdf(y: np.ndarray, n: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    y = np.asarray(y, int); n = np.asarray(n, int); shape = y.shape
+    """
+    Beta–Binomial CDF:
+    - Try SciPy's exact cdf
+    - Fall back to Normal approximation in extreme tails
+    """
+    y = np.asarray(y, int)
+    n = np.asarray(n, int)
+    shape = y.shape
     a = np.broadcast_to(np.asarray(a, float), shape)
     b = np.broadcast_to(np.asarray(b, float), shape)
     try:
@@ -263,11 +376,13 @@ def _coverage_rate(y: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> float:
     return float(np.mean((y[m] >= lo[m]) & (y[m] <= hi[m])))
 
 def _eval_binom_postpred(y: np.ndarray, n: np.ndarray, a: float, b: float):
+    # Posterior parameters (conjugate), using all rows (in-sample PPC)
     s = float(np.sum(y)); t = float(np.sum(n))
     a_post = a + s; b_post = b + (t - s)
-    p_mean = a_post / (a_post + b_post)
-    y_hat  = n * p_mean
+    p_mean = a_post / (a_post + b_post)   # posterior mean of p
+    y_hat  = n * p_mean                    # mean of posterior predictive for each row
 
+    # Log posterior predictive (Beta-Binomial) and discrete PIT via mid-CDF
     logp = (gammaln(n + 1.0) - gammaln(y + 1.0) - gammaln(n - y + 1.0)
             + gammaln(y + a_post) + gammaln(n - y + b_post) - gammaln(n + a_post + b_post)
             - (gammaln(a_post) + gammaln(b_post) - gammaln(a_post + b_post)))
@@ -286,43 +401,62 @@ def _eval_bern_postpred(x: np.ndarray, a: float, b: float):
     return _eval_binom_postpred(y, n, a, b)
 
 def _eval_pois_postpred(x: np.ndarray, a: float, beta_rate: float):
-    s = float(np.sum(x)); N = int(x.size)
-    a_post = a + s; b_post = beta_rate + N
-    r = a_post; p = b_post/(b_post + 1.0)  # SciPy nbinom parameterization
+    """
+    Poisson-Gamma(rate) posterior predictive:
+    x | λ ~ Pois(λ), λ ~ Gamma(a, beta)
+    => x | data ~ NegBin(r=a+sum x, p=(beta+N)/(beta+N+1))
+    """
+    x = np.asarray(x, np.int64)
+    s = float(np.sum(x))
+    N = int(x.size)
+    a_post = a + s
+    b_post = beta_rate + N
+    r = a_post
+    p = b_post / (b_post + 1.0)  # SciPy nbinom parameterization uses "n=r, p=p"
     y_hat = np.full_like(x, a_post / b_post, dtype=float)
 
-    logp = nbinom.logpmf(x, n=r, p=p)
-    Fy   = nbinom.cdf(x, n=r, p=p)
-    Fym1 = nbinom.cdf(np.maximum(x-1, 0), n=r, p=p)
-    pit  = _clip01(0.5*(Fy + Fym1), 1e-12)
+    logp = nbinom.logpmf(x, n=r, p=p).astype(float, copy=False)
+    Fy   = nbinom.cdf(x, n=r, p=p).astype(float, copy=False)
+    Fym1 = nbinom.cdf(np.maximum(x - 1, 0), n=r, p=p).astype(float, copy=False)
+    pit  = _clip01(0.5 * (Fy + Fym1), 1e-12)
 
-    lo50 = nbinom.ppf(0.25, n=r, p=p).astype(float)
-    hi50 = nbinom.ppf(0.75, n=r, p=p).astype(float)
-    lo90 = nbinom.ppf(0.05,  n=r, p=p).astype(float)
-    hi90 = nbinom.ppf(0.95,  n=r, p=p).astype(float)
+    lo50 = nbinom.ppf(0.25, n=r, p=p).astype(float, copy=False)
+    hi50 = nbinom.ppf(0.75, n=r, p=p).astype(float, copy=False)
+    lo90 = nbinom.ppf(0.05,  n=r, p=p).astype(float, copy=False)
+    hi90 = nbinom.ppf(0.95,  n=r, p=p).astype(float, copy=False)
     return None, y_hat, logp, pit, (lo50, hi50), (lo90, hi90)
 
 def _eval_gauss_postpred(x: np.ndarray, mu0: float, k0: float, a0: float, b0: float):
-    x = np.asarray(x, float); N = x.size
-    if N == 0: raise ValueError("Gaussian column has no finite values.")
-    S = float(np.sum(x)); Q = float(np.sum(x*x)); xbar = S/N; SSE = Q - N*xbar*xbar
+    """
+    Normal–Inverse–Gamma posterior predictive:
+    x_new | data ~ Student-t(df=2aN, loc=muN, scale = sqrt(bN*(kN+1)/(aN*kN)).
+    """
+    x = np.asarray(x, float)
+    N = x.size
+    if N == 0:
+        raise ValueError("Gaussian column has no finite values.")
+    S = float(np.sum(x))
+    Q = float(np.sum(x * x))
+    xbar = S / N
+    SSE = Q - N * xbar * xbar
 
-    kN = k0 + N; aN = a0 + 0.5*N
-    bN = b0 + 0.5*SSE + (k0*N*(xbar - mu0)**2)/(2.0*kN)
-    muN = (k0*mu0 + S)/kN
+    kN = k0 + N
+    aN = a0 + 0.5 * N
+    bN = b0 + 0.5 * SSE + (k0 * N * (xbar - mu0) ** 2) / (2.0 * kN)
+    muN = (k0 * mu0 + S) / kN
 
-    df = 2.0*aN
-    scale = np.sqrt(bN*(kN+1.0)/(aN*kN))
+    df = 2.0 * aN
+    scale = np.sqrt(bN * (kN + 1.0) / (aN * kN))
 
     mean_pred = np.full_like(x, muN, dtype=float)
 
-    logp = student_t.logpdf(x, df=df, loc=muN, scale=scale)
+    logp = student_t.logpdf(x, df=df, loc=muN, scale=scale).astype(float, copy=False)
     pit  = _clip01(student_t.cdf(x, df=df, loc=muN, scale=scale), 1e-12)
 
-    lo50 = student_t.ppf(0.25, df=df, loc=muN, scale=scale)
-    hi50 = student_t.ppf(0.75, df=df, loc=muN, scale=scale)
-    lo90 = student_t.ppf(0.05,  df=df, loc=muN, scale=scale)
-    hi90 = student_t.ppf(0.95,  df=df, loc=muN, scale=scale)
+    lo50 = student_t.ppf(0.25, df=df, loc=muN, scale=scale).astype(float, copy=False)
+    hi50 = student_t.ppf(0.75, df=df, loc=muN, scale=scale).astype(float, copy=False)
+    lo90 = student_t.ppf(0.05,  df=df, loc=muN, scale=scale).astype(float, copy=False)
+    hi90 = student_t.ppf(0.95,  df=df, loc=muN, scale=scale).astype(float, copy=False)
     return None, mean_pred, logp, pit, (lo50, hi50), (lo90, hi90)
 
 
@@ -352,6 +486,7 @@ DEFAULT_BASELINES: Dict[str, List[Dict[str, Any]]] = {
 def _resolve_nig_from_data(x: np.ndarray, pr: Dict[str, Any]) -> Dict[str, Any]:
     mu_hat = float(np.mean(x)) if x.size else 0.0
     s2_hat = float(np.var(x, ddof=1)) if x.size > 1 else float(np.var(x)) if x.size else 1.0
+    # In Inv-Gamma(alpha0, beta0), E[sigma^2] = beta0/(alpha0-1) for alpha0>1
     beta_auto = float(max(1e-12, s2_hat * max(1.0, pr.get("alpha0", 2.0) - 1.0)))
     return {
         "name": pr.get("name", "auto"),
@@ -362,7 +497,7 @@ def _resolve_nig_from_data(x: np.ndarray, pr: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# ============================ Writers ============================
+# ============================ Writers & Bayes factors ============================
 def _flatten_row(run_id: str, family: str, prior: Dict[str, Any], log_evidence_family: float,
                  extras: Dict[str, Any]) -> Dict[str, Any]:
     row: Dict[str, Any] = {
@@ -376,6 +511,21 @@ def _flatten_row(run_id: str, family: str, prior: Dict[str, Any], log_evidence_f
             row[f"prior_{k}"] = v
     row.update(extras)
     return row
+
+def _bayes_factors_from_scores(ids: List[str], log_evs: np.ndarray, scope: str, fam: str):
+    """Numerically stable Bayes factors; include log-BF and cap linear BF to avoid overflow."""
+    out = []
+    order = np.argsort(-log_evs)
+    ids_sorted = [ids[i] for i in order]
+    le_sorted  = log_evs[order]
+    for i in range(len(ids_sorted)):
+        for j in range(i+1, len(ids_sorted)):
+            lbf = float(le_sorted[i] - le_sorted[j])
+            bf  = float(np.exp(lbf)) if lbf < 700 else float('inf')
+            out.append({"scope": scope, "family": fam,
+                        "better_model": ids_sorted[i], "worse_model": ids_sorted[j],
+                        "log_bayes_factor": lbf, "bayes_factor": bf})
+    return out
 
 def _write_tables(paths: Dict[str, Path], all_rows: List[Dict[str, Any]], drop_constant_used: bool) -> None:
     if not all_rows: return
@@ -402,26 +552,20 @@ def _write_tables(paths: Dict[str, Path], all_rows: List[Dict[str, Any]], drop_c
     df["global_rank"] = rank_g; df["best_in_family"] = df["family_rank"] == 1; df["best_global"] = df["global_rank"] == 1
 
     df_out = df.sort_values(["family", "family_rank", "global_rank"])
-    (tables_dir / "baselines_detailed.csv").write_text(df_out.to_csv(index=False), encoding="utf-8")
+    _safe_write_csv(df_out, tables_dir / "baselines_detailed.csv")
 
-    # Bayes factors
-    bf = []
+    # Bayes factors (stable)
+    bf_rows = []
     for fam, g in df.groupby("family"):
-        g = g.sort_values("log_evidence_family", ascending=False)
-        ids = g["model_id"].tolist(); le = g["log_evidence_family"].astype(float).to_numpy()
-        for i in range(len(ids)):
-            for j in range(i+1, len(ids)):
-                bf.append({"scope": "family", "family": fam, "better_model": ids[i],
-                           "worse_model": ids[j], "bayes_factor": float(np.exp(le[i]-le[j]))})
+        g_sorted = g.sort_values("log_evidence_family", ascending=False)
+        ids = g_sorted["model_id"].tolist(); le = g_sorted["log_evidence_family"].astype(float).to_numpy()
+        bf_rows.extend(_bayes_factors_from_scores(ids, le, scope="family", fam=fam))
     g = df.sort_values("log_evidence_raw", ascending=False)
     ids = g["model_id"].tolist(); le = g["log_evidence_raw"].astype(float).to_numpy()
-    for i in range(len(ids)):
-        for j in range(i+1, len(ids)):
-            bf.append({"scope": "global", "family": "*", "better_model": ids[i],
-                       "worse_model": ids[j], "bayes_factor": float(np.exp(le[i]-le[j]))})
-    if bf:
-        bf_df = pd.DataFrame(bf)
-        (tables_dir / "bayes_factors_full.csv").write_text(bf_df.to_csv(index=False), encoding="utf-8")
+    bf_rows.extend(_bayes_factors_from_scores(ids, le, scope="global", fam="*"))
+    if bf_rows:
+        bf_df = pd.DataFrame(bf_rows)
+        _safe_write_csv(bf_df, tables_dir / "bayes_factors_full.csv")
 
 def _append_postpred_csv(paths: Dict[str, Path], model_id: str, family: str,
                          obs: np.ndarray, size: Optional[np.ndarray] = None,
@@ -455,7 +599,20 @@ def _append_postpred_csv(paths: Dict[str, Path], model_id: str, family: str,
         "lo90":     as_col(lo90,  N),
         "hi90":     as_col(hi90,  N),
     })
+    # Append-by-chunk for per-model PPC
     df_out.to_csv(out_path, mode="a", header=not out_path.exists(), index=False)
+
+
+# ============================ PIT χ² (extra calibration) ============================
+def _pit_chisq(pit: np.ndarray, bins: int = PIT_BINS) -> Tuple[float, float]:
+    """Binned χ² test vs. uniform; returns (chi2, pvalue)."""
+    u = pit[np.isfinite(pit)]
+    if u.size == 0:
+        return float("nan"), float("nan")
+    h, _ = np.histogram(u, bins=bins, range=(0, 1))
+    exp = np.full_like(h, u.size / bins, dtype=float)
+    chi2, p = chisquare(h, f_exp=exp)
+    return float(chi2), float(p)
 
 
 # ============================ Stage main ============================
@@ -465,7 +622,8 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
     out_root = _resolve_out_root(cfg); _ensure_dir(out_root)
     _log(ctx, "INFO", "Resolved output root", {"out_root": str(out_root.resolve())})
 
-    data_path = _find_input(ctx, _cfg_data_path(cfg))
+    base_dir = (cfg.get("io", {}) or {}).get("results_dir")
+    data_path = _find_input(ctx, _cfg_data_path(cfg), base_dir)
     paths = {
         "root": out_root,
         "runs": out_root / "runs",
@@ -474,13 +632,17 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
         "logs": out_root / "logs",
         "figures": out_root / "figures",
     }
-    for p in paths.values(): _ensure_dir(p)
+    for p in paths.values():
+        p.mkdir(parents=True, exist_ok=True)
+
 
     # Reset per-run per-row CSV (we always write full per-row outputs).
     pp_all = paths["tables"] / "postpred_all_models.csv"
     if pp_all.exists():
-        try: pp_all.unlink()
-        except Exception as e: _log(ctx, "WARN", "Could not remove previous postpred_all_models.csv", {"error": str(e)})
+        try:
+            pp_all.unlink()
+        except Exception as e:
+            _log(ctx, "WARN", "Could not remove previous postpred_all_models.csv", {"error": str(e)})
 
     df = _read_csv_any(data_path)
     data_info = {"data_path": str(Path(data_path).resolve()), "data_n_rows": int(len(df))}
@@ -495,39 +657,51 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
     # ------------ Binomial ------------
     try:
         c_col, n_col = _pick_count_size_cols(df, ctx)
-        y = pd.to_numeric(df[c_col], errors="coerce").fillna(0).astype(np.int64).to_numpy()
-        n = pd.to_numeric(df[n_col], errors="coerce").fillna(0).astype(np.int64).to_numpy()
-        n = np.maximum(n, 1); y = np.clip(y, 0, n)
+
+        # sanitize columns (log how many we fix)
+        bad_y = int((~np.isfinite(pd.to_numeric(df[c_col], errors="coerce"))).sum())
+        bad_n = int((~np.isfinite(pd.to_numeric(df[n_col], errors="coerce"))).sum())
+        if bad_y or bad_n:
+            _log(ctx, "WARN", "Non-finite values in binomial columns coerced to 0",
+                 {"count_bad_y": bad_y, "count_bad_n": bad_n})
+
+        # Correct preparation that preserves n==0 exactly:
+        y, n, p_obs = _prepare_binomial_arrays(df, c_col, n_col)
 
         priors = DEFAULT_BASELINES["binomial"]
-        run_dir = paths["runs"]/ "binomial"; _ensure_dir(run_dir)
-        (run_dir/"meta.json").write_text(json.dumps({"family":"binomial", **data_info}, indent=2), encoding="utf-8")
-        (run_dir/"run_summary.jsonl").write_text("", encoding="utf-8")
+        run_dir = paths["runs"] / "binomial"; _ensure_dir(run_dir)
+        (run_dir / "meta.json").write_text(
+            json.dumps({"family": "binomial", **data_info}, indent=2),
+            encoding="utf-8"
+        )
+        (run_dir / "run_summary.jsonl").write_text("", encoding="utf-8")
 
         for i, pr in enumerate(priors):
             model_id = f"binomial_{i:02d}_{pr['name']}"
-            a,b = float(pr["alpha"]), float(pr["beta"])
+            a, b = float(pr["alpha"]), float(pr["beta"])
 
-            log_raw = _evidence_binom_beta(y,n,a,b,include_comb=True)
-            log_nc  = _evidence_binom_beta(y,n,a,b,include_comb=False)
+            # Evidence (with/without combinational constant)
+            log_raw = _evidence_binom_beta(y, n, a, b, include_comb=True)
+            log_nc  = _evidence_binom_beta(y, n, a, b, include_comb=False)
             log_fam = log_nc if drop_binom_comb else log_raw
 
-            p_mean, y_hat, logp, pit, (lo50,hi50), (lo90,hi90) = _eval_binom_postpred(y,n,a,b)
-            p_obs = y/np.maximum(n,1)
+            p_mean, y_hat, logp, pit, (lo50, hi50), (lo90, hi90) = _eval_binom_postpred(y, n, a, b)
 
-            rmse_p = float(np.sqrt(np.mean((p_mean - p_obs)**2)))
+            rmse_p = float(np.sqrt(np.mean((p_mean - p_obs) ** 2)))
             mae_p  = float(np.mean(np.abs(p_mean - p_obs)))
-            rmse_y = float(np.sqrt(np.mean((y_hat - y)**2)))
+            rmse_y = float(np.sqrt(np.mean((y_hat - y) ** 2)))
             mae_y  = float(np.mean(np.abs(y_hat - y)))
             cov50  = _coverage_rate(y, lo50, hi50)
             cov90  = _coverage_rate(y, lo90, hi90)
-            finite = np.isfinite(logp); lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
+            finite = np.isfinite(logp)
+            lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
             u = pit[np.isfinite(pit)]
-            ks_p = float(kstest(u,'uniform').pvalue) if u.size else float('nan')
-            var_ratio = float(np.var(u)/(1.0/12.0)) if u.size else float('nan')
+            ks_p = float(kstest(u, 'uniform').pvalue) if u.size else float('nan')
+            var_ratio = float(np.var(u) / (1.0 / 12.0)) if u.size else float('nan')
+            chi2_stat, chi2_p = _pit_chisq(pit, bins=PIT_BINS)
 
             row = _flatten_row("binomial", "binomial", pr, log_fam, {
-                "model_id": model_id, "prior_type":"beta",
+                "model_id": model_id, "prior_type": "beta",
                 "log_evidence_family": float(log_fam),
                 "log_evidence_raw": float(log_raw),
                 "log_evidence_noconst": float(log_nc),
@@ -536,55 +710,73 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
             })
             all_rows.append(row)
 
-            metrics_rows.append({"model_id": model_id, "family": "binomial", "prior_name": pr["name"],
-                                 "rmse_p": rmse_p, "mae_p": mae_p, "rmse_y": rmse_y, "mae_y": mae_y,
-                                 "lpd_sum": lpd_sum, "coverage_50": cov50, "coverage_90": cov90,
-                                 "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "n_obs": int(len(y))})
+            metrics_rows.append({
+                "model_id": model_id, "family": "binomial", "prior_name": pr["name"],
+                "rmse_p": rmse_p, "mae_p": mae_p, "rmse_y": rmse_y, "mae_y": mae_y,
+                "lpd_sum": lpd_sum, "coverage_50": cov50, "coverage_90": cov90,
+                "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "pit_chi2_stat": chi2_stat, "pit_chi2_p": chi2_p,
+                "n_obs": int(len(y))
+            })
 
             if u.size:
-                h,edges = np.histogram(u, bins=20, range=(0,1))
-                for b_idx,cnt in enumerate(h):
-                    pit_hist_rows.append({"model_id": model_id, "family": "binomial",
-                                          "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx+1]),
-                                          "count": int(cnt), "sample_n": int(u.size)})
+                h, edges = np.histogram(u, bins=PIT_BINS, range=(0, 1))
+                for b_idx, cnt in enumerate(h):
+                    pit_hist_rows.append({
+                        "model_id": model_id, "family": "binomial",
+                        "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx + 1]),
+                        "count": int(cnt), "sample_n": int(u.size)
+                    })
 
-            with open(run_dir/"run_summary.jsonl","a",encoding="utf-8") as jf:
-                jf.write(json.dumps({"model_id": model_id, **row})+"\n")
+            with open(run_dir / "run_summary.jsonl", "a", encoding="utf-8") as jf:
+                jf.write(json.dumps({"model_id": model_id, **row}) + "\n")
 
-            _append_postpred_csv(paths, model_id, "binomial",
-                                 obs=y, size=n, ps=p_mean, p_mean=p_mean, y_hat=y_hat,
-                                 logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90)
+            _append_postpred_csv(
+                paths, model_id, "binomial",
+                obs=y, size=n, ps=p_mean, p_mean=p_mean, y_hat=y_hat,
+                logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90
+            )
     except Exception as e:
         _log(ctx, "WARN", "Binomial skipped", {"error": str(e)})
 
     # ------------ Poisson ------------
     try:
-        x_col = _pick_numeric_col(df, preferred=["count","alt_count","y"], ctx=ctx)
-        x = pd.to_numeric(df[x_col], errors="coerce").fillna(0).astype(float).to_numpy()
+        x_col = _pick_numeric_col(df, preferred=["count", "alt_count", "y"], ctx=ctx)
+        x_s = _sanitize_series(df[x_col])
+        bad_x = int((~np.isfinite(pd.to_numeric(df[x_col], errors="coerce"))).sum())
+        if bad_x:
+            _log(ctx, "WARN", "Non-finite values in Poisson column coerced to 0", {"count_bad": bad_x})
+
+        x = x_s.astype(float).to_numpy()
         x = np.clip(np.round(x), 0, None).astype(np.int64)
         if not _is_nonneg_int(x):
             _log(ctx, "WARN", "Poisson coerced non-neg ints", {"column": x_col})
 
         priors = DEFAULT_BASELINES["poisson"]
-        run_dir = paths["runs"]/ "poisson"; _ensure_dir(run_dir)
-        (run_dir/"meta.json").write_text(json.dumps({"family":"poisson", **data_info}, indent=2), encoding="utf-8")
-        (run_dir/"run_summary.jsonl").write_text("", encoding="utf-8")
+        run_dir = paths["runs"] / "poisson"; _ensure_dir(run_dir)
+        (run_dir / "meta.json").write_text(
+            json.dumps({"family": "poisson", **data_info}, indent=2),
+            encoding="utf-8"
+        )
+        (run_dir / "run_summary.jsonl").write_text("", encoding="utf-8")
 
         for i, pr in enumerate(priors):
             model_id = f"poisson_{i:02d}_{pr['name']}"
-            a,beta_rate = float(pr["alpha"]), float(pr["beta"])
+            a, beta_rate = float(pr["alpha"]), float(pr["beta"])
 
-            log_ev = _evidence_pois_gamma_rate(x,a,beta_rate)
-            _, y_hat, logp, pit, (lo50,hi50), (lo90,hi90) = _eval_pois_postpred(x,a,beta_rate)
-            rmse_y = float(np.sqrt(np.mean((y_hat - x)**2)))
+            log_ev = _evidence_pois_gamma_rate(x, a, beta_rate)
+            _, y_hat, logp, pit, (lo50, hi50), (lo90, hi90) = _eval_pois_postpred(x, a, beta_rate)
+
+            rmse_y = float(np.sqrt(np.mean((y_hat - x) ** 2)))
             mae_y  = float(np.mean(np.abs(y_hat - x)))
-            finite = np.isfinite(logp); lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
+            finite = np.isfinite(logp)
+            lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
             u = pit[np.isfinite(pit)]
-            ks_p = float(kstest(u,'uniform').pvalue) if u.size else float('nan')
-            var_ratio = float(np.var(u)/(1.0/12.0)) if u.size else float('nan')
+            ks_p = float(kstest(u, 'uniform').pvalue) if u.size else float('nan')
+            var_ratio = float(np.var(u) / (1.0 / 12.0)) if u.size else float('nan')
+            chi2_stat, chi2_p = _pit_chisq(pit, bins=PIT_BINS)
 
             row = _flatten_row("poisson", "poisson", pr, log_ev, {
-                "model_id": model_id, "prior_type":"gamma_rate",
+                "model_id": model_id, "prior_type": "gamma_rate",
                 "log_evidence_family": float(log_ev),
                 "log_evidence_raw": float(log_ev),
                 "log_evidence_noconst": float(log_ev),
@@ -592,54 +784,74 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
             })
             all_rows.append(row)
 
-            metrics_rows.append({"model_id": model_id, "family": "poisson", "prior_name": pr["name"],
-                                 "rmse_p": np.nan, "mae_p": np.nan,
-                                 "rmse_y": rmse_y, "mae_y": mae_y,
-                                 "lpd_sum": lpd_sum, "coverage_50": _coverage_rate(x, lo50, hi50),
-                                 "coverage_90": _coverage_rate(x, lo90, hi90),
-                                 "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "n_obs": int(len(x))})
+            metrics_rows.append({
+                "model_id": model_id, "family": "poisson", "prior_name": pr["name"],
+                "rmse_p": np.nan, "mae_p": np.nan,
+                "rmse_y": rmse_y, "mae_y": mae_y,
+                "lpd_sum": lpd_sum, "coverage_50": _coverage_rate(x, lo50, hi50),
+                "coverage_90": _coverage_rate(x, lo90, hi90),
+                "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "pit_chi2_stat": chi2_stat, "pit_chi2_p": chi2_p,
+                "n_obs": int(len(x))
+            })
 
             if u.size:
-                h,edges = np.histogram(u, bins=20, range=(0,1))
-                for b_idx,cnt in enumerate(h):
-                    pit_hist_rows.append({"model_id": model_id, "family": "poisson",
-                                          "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx+1]),
-                                          "count": int(cnt), "sample_n": int(u.size)})
+                h, edges = np.histogram(u, bins=PIT_BINS, range=(0, 1))
+                for b_idx, cnt in enumerate(h):
+                    pit_hist_rows.append({
+                        "model_id": model_id, "family": "poisson",
+                        "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx + 1]),
+                        "count": int(cnt), "sample_n": int(u.size)
+                    })
 
-            with open(run_dir/"run_summary.jsonl","a",encoding="utf-8") as jf:
-                jf.write(json.dumps({"model_id": model_id, **row})+"\n")
+            with open(run_dir / "run_summary.jsonl", "a", encoding="utf-8") as jf:
+                jf.write(json.dumps({"model_id": model_id, **row}) + "\n")
 
-            _append_postpred_csv(paths, model_id, "poisson",
-                                 obs=x, size=None, ps=y_hat, p_mean=None, y_hat=y_hat,
-                                 logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90)
+            _append_postpred_csv(
+                paths, model_id, "poisson",
+                obs=x, size=None, ps=y_hat, p_mean=None, y_hat=y_hat,
+                logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90
+            )
     except Exception as e:
         _log(ctx, "WARN", "Poisson skipped", {"error": str(e)})
 
     # ------------ Gaussian ------------
     try:
-        g_col = _pick_numeric_col(df, preferred=["value","growth_rate","x"], ctx=ctx)
-        g = pd.to_numeric(df[g_col], errors="coerce").dropna().astype(float).to_numpy()
-        if g.size == 0: raise ValueError("Gaussian column has no finite values.")
+        g_col = _pick_numeric_col(df, preferred=["value", "growth_rate", "x"], ctx=ctx)
+        g_s = _sanitize_series(df[g_col])
+        bad_g = int((~np.isfinite(pd.to_numeric(df[g_col], errors="coerce"))).sum())
+        if bad_g:
+            _log(ctx, "WARN", "Non-finite values in Gaussian column dropped", {"count_bad": bad_g})
+
+        g = g_s.dropna().astype(float).to_numpy()
+        if g.size == 0:
+            raise ValueError("Gaussian column has no finite values.")
 
         priors_resolved = [_resolve_nig_from_data(g, pr) for pr in DEFAULT_BASELINES["gaussian"]]
-        run_dir = paths["runs"]/ "gaussian"; _ensure_dir(run_dir)
-        (run_dir/"meta.json").write_text(json.dumps({"family":"gaussian", **data_info}, indent=2), encoding="utf-8")
-        (run_dir/"run_summary.jsonl").write_text("", encoding="utf-8")
+        run_dir = paths["runs"] / "gaussian"; _ensure_dir(run_dir)
+        (run_dir / "meta.json").write_text(
+            json.dumps({"family": "gaussian", **data_info}, indent=2),
+            encoding="utf-8"
+        )
+        (run_dir / "run_summary.jsonl").write_text("", encoding="utf-8")
 
         for i, pr in enumerate(priors_resolved):
             model_id = f"gaussian_{i:02d}_{pr['name']}"
-            mu0,k0,a0,b0 = float(pr["mu0"]), float(pr["kappa0"]), float(pr["alpha0"]), float(pr["beta0"])
+            mu0, k0, a0, b0 = float(pr["mu0"]), float(pr["kappa0"]), float(pr["alpha0"]), float(pr["beta0"])
 
-            log_ev = _evidence_gauss_nig(g, mu0,k0,a0,b0)
-            _, mean_pred, logp, pit, (lo50,hi50), (lo90,hi90) = _eval_gauss_postpred(g, mu0,k0,a0,b0)
-            rmse_y = float(np.sqrt(np.mean((mean_pred - g)**2)))
+            log_ev = _evidence_gauss_nig(g, mu0, k0, a0, b0)
+            _, mean_pred, logp, pit, (lo50, hi50), (lo90, hi90) = _eval_gauss_postpred(g, mu0, k0, a0, b0)
+
+            rmse_y = float(np.sqrt(np.mean((mean_pred - g) ** 2)))
             mae_y  = float(np.mean(np.abs(mean_pred - g)))
-            finite = np.isfinite(logp); lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
-            u = pit[np.isfinite(pit)]; ks_p = float(kstest(u,'uniform').pvalue) if u.size else float('nan')
-            var_ratio = float(np.var(u)/(1.0/12.0)) if u.size else float('nan')
+            finite = np.isfinite(logp)
+            lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
+            u = pit[np.isfinite(pit)]
+            ks_p = float(kstest(u, 'uniform').pvalue) if u.size else float('nan')
+            var_ratio = float(np.var(u) / (1.0 / 12.0)) if u.size else float('nan')
+            chi2_stat, chi2_p = _pit_chisq(pit, bins=PIT_BINS)
 
             row = _flatten_row("gaussian", "gaussian", pr, log_ev, {
-                "model_id": model_id, "prior_type":"nig",
+                "model_id": model_id, "prior_type": "nig",
                 "log_evidence_family": float(log_ev),
                 "log_evidence_raw": float(log_ev),
                 "log_evidence_noconst": float(log_ev),
@@ -647,60 +859,79 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
             })
             all_rows.append(row)
 
-            metrics_rows.append({"model_id": model_id, "family": "gaussian", "prior_name": pr["name"],
-                                 "rmse_p": np.nan, "mae_p": np.nan,
-                                 "rmse_y": rmse_y, "mae_y": mae_y,
-                                 "lpd_sum": lpd_sum, "coverage_50": _coverage_rate(g, lo50, hi50),
-                                 "coverage_90": _coverage_rate(g, lo90, hi90),
-                                 "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "n_obs": int(len(g))})
+            metrics_rows.append({
+                "model_id": model_id, "family": "gaussian", "prior_name": pr["name"],
+                "rmse_p": np.nan, "mae_p": np.nan,
+                "rmse_y": rmse_y, "mae_y": mae_y,
+                "lpd_sum": lpd_sum, "coverage_50": _coverage_rate(g, lo50, hi50),
+                "coverage_90": _coverage_rate(g, lo90, hi90),
+                "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "pit_chi2_stat": chi2_stat, "pit_chi2_p": chi2_p,
+                "n_obs": int(len(g))
+            })
 
             if u.size:
-                h,edges = np.histogram(u, bins=20, range=(0,1))
-                for b_idx,cnt in enumerate(h):
-                    pit_hist_rows.append({"model_id": model_id, "family": "gaussian",
-                                          "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx+1]),
-                                          "count": int(cnt), "sample_n": int(u.size)})
+                h, edges = np.histogram(u, bins=PIT_BINS, range=(0, 1))
+                for b_idx, cnt in enumerate(h):
+                    pit_hist_rows.append({
+                        "model_id": model_id, "family": "gaussian",
+                        "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx + 1]),
+                        "count": int(cnt), "sample_n": int(u.size)
+                    })
 
-            with open(run_dir/"run_summary.jsonl","a",encoding="utf-8") as jf:
-                jf.write(json.dumps({"model_id": model_id, **row})+"\n")
+            with open(run_dir / "run_summary.jsonl", "a", encoding="utf-8") as jf:
+                jf.write(json.dumps({"model_id": model_id, **row}) + "\n")
 
-            _append_postpred_csv(paths, model_id, "gaussian",
-                                 obs=g, size=None, ps=mean_pred, p_mean=None, y_hat=mean_pred,
-                                 logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90)
+            _append_postpred_csv(
+                paths, model_id, "gaussian",
+                obs=g, size=None, ps=mean_pred, p_mean=None, y_hat=mean_pred,
+                logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90
+            )
     except Exception as e:
         _log(ctx, "WARN", "Gaussian skipped", {"error": str(e)})
 
     # ------------ Bernoulli ------------
     try:
-        b_col = _pick_numeric_col(df, preferred=["is_present","present","binary","y"], ctx=ctx)
-        x = pd.to_numeric(df[b_col], errors="coerce").fillna(0).to_numpy()
-        x = np.where(x>0, 1.0, 0.0).astype(np.int64)
+        b_col = _pick_numeric_col(df, preferred=["is_present", "present", "binary", "y"], ctx=ctx)
+        x_s = _sanitize_series(df[b_col])
+        bad_b = int((~np.isfinite(pd.to_numeric(df[b_col], errors="coerce"))).sum())
+        if bad_b:
+            _log(ctx, "WARN", "Non-finite values in Bernoulli column coerced to 0", {"count_bad": bad_b})
+
+        x = x_s.fillna(0).to_numpy()
+        x = np.where(x > 0, 1.0, 0.0).astype(np.int64)
         if not _is_binary(x):
             _log(ctx, "WARN", "Bernoulli column coerced to {0,1}", {"column": b_col})
 
         priors = DEFAULT_BASELINES["bernoulli"]
-        run_dir = paths["runs"]/ "bernoulli"; _ensure_dir(run_dir)
-        (run_dir/"meta.json").write_text(json.dumps({"family":"bernoulli", **data_info}, indent=2), encoding="utf-8")
-        (run_dir/"run_summary.jsonl").write_text("", encoding="utf-8")
+        run_dir = paths["runs"] / "bernoulli"; _ensure_dir(run_dir)
+        (run_dir / "meta.json").write_text(
+            json.dumps({"family": "bernoulli", **data_info}, indent=2),
+            encoding="utf-8"
+        )
+        (run_dir / "run_summary.jsonl").write_text("", encoding="utf-8")
 
         for i, pr in enumerate(priors):
             model_id = f"bernoulli_{i:02d}_{pr['name']}"
-            a,b = float(pr["alpha"]), float(pr["beta"])
+            a, b = float(pr["alpha"]), float(pr["beta"])
 
-            log_ev = _evidence_bern_beta(x,a,b)
-            p_mean, y_hat, logp, pit, (lo50,hi50), (lo90,hi90) = _eval_bern_postpred(x,a,b)
-            rmse_p = float(np.sqrt(np.mean((p_mean - x)**2)))
+            log_ev = _evidence_bern_beta(x, a, b)
+            p_mean, y_hat, logp, pit, (lo50, hi50), (lo90, hi90) = _eval_bern_postpred(x, a, b)
+
+            rmse_p = float(np.sqrt(np.mean((p_mean - x) ** 2)))
             mae_p  = float(np.mean(np.abs(p_mean - x)))
-            rmse_y = float(np.sqrt(np.mean((y_hat - x)**2)))
+            rmse_y = float(np.sqrt(np.mean((y_hat - x) ** 2)))
             mae_y  = float(np.mean(np.abs(y_hat - x)))
             cov50  = _coverage_rate(x, lo50, hi50)
             cov90  = _coverage_rate(x, lo90, hi90)
-            finite = np.isfinite(logp); lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
-            u = pit[np.isfinite(pit)]; ks_p = float(kstest(u,'uniform').pvalue) if u.size else float('nan')
-            var_ratio = float(np.var(u)/(1.0/12.0)) if u.size else float('nan')
+            finite = np.isfinite(logp)
+            lpd_sum = float(np.sum(logp[finite])) if np.any(finite) else float("-inf")
+            u = pit[np.isfinite(pit)]
+            ks_p = float(kstest(u, 'uniform').pvalue) if u.size else float('nan')
+            var_ratio = float(np.var(u) / (1.0 / 12.0)) if u.size else float('nan')
+            chi2_stat, chi2_p = _pit_chisq(pit, bins=PIT_BINS)
 
             row = _flatten_row("bernoulli", "bernoulli", pr, log_ev, {
-                "model_id": model_id, "prior_type":"beta",
+                "model_id": model_id, "prior_type": "beta",
                 "log_evidence_family": float(log_ev),
                 "log_evidence_raw": float(log_ev),
                 "log_evidence_noconst": float(log_ev),
@@ -708,24 +939,31 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
             })
             all_rows.append(row)
 
-            metrics_rows.append({"model_id": model_id, "family": "bernoulli", "prior_name": pr["name"],
-                                 "rmse_p": rmse_p, "mae_p": mae_p, "rmse_y": rmse_y, "mae_y": mae_y,
-                                 "lpd_sum": lpd_sum, "coverage_50": cov50, "coverage_90": cov90,
-                                 "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "n_obs": int(len(x))})
+            metrics_rows.append({
+                "model_id": model_id, "family": "bernoulli", "prior_name": pr["name"],
+                "rmse_p": rmse_p, "mae_p": mae_p, "rmse_y": rmse_y, "mae_y": mae_y,
+                "lpd_sum": lpd_sum, "coverage_50": cov50, "coverage_90": cov90,
+                "pit_ks_p": ks_p, "pit_var_ratio": var_ratio, "pit_chi2_stat": chi2_stat, "pit_chi2_p": chi2_p,
+                "n_obs": int(len(x))
+            })
 
             if u.size:
-                h,edges = np.histogram(u, bins=20, range=(0,1))
-                for b_idx,cnt in enumerate(h):
-                    pit_hist_rows.append({"model_id": model_id, "family": "bernoulli",
-                                          "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx+1]),
-                                          "count": int(cnt), "sample_n": int(u.size)})
+                h, edges = np.histogram(u, bins=PIT_BINS, range=(0, 1))
+                for b_idx, cnt in enumerate(h):
+                    pit_hist_rows.append({
+                        "model_id": model_id, "family": "bernoulli",
+                        "bin_left": float(edges[b_idx]), "bin_right": float(edges[b_idx + 1]),
+                        "count": int(cnt), "sample_n": int(u.size)
+                    })
 
-            with open(run_dir/"run_summary.jsonl","a",encoding="utf-8") as jf:
-                jf.write(json.dumps({"model_id": model_id, **row})+"\n")
+            with open(run_dir / "run_summary.jsonl", "a", encoding="utf-8") as jf:
+                jf.write(json.dumps({"model_id": model_id, **row}) + "\n")
 
-            _append_postpred_csv(paths, model_id, "bernoulli",
-                                 obs=x, size=np.ones_like(x,int), ps=p_mean, p_mean=p_mean, y_hat=y_hat,
-                                 logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90)
+            _append_postpred_csv(
+                paths, model_id, "bernoulli",
+                obs=x, size=np.ones_like(x, int), ps=p_mean, p_mean=p_mean, y_hat=y_hat,
+                logp=logp, pit=pit, lo50=lo50, hi50=hi50, lo90=lo90, hi90=hi90
+            )
     except Exception as e:
         _log(ctx, "WARN", "Bernoulli skipped", {"error": str(e)})
 
@@ -738,19 +976,19 @@ def run_baseline(cfg: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
         if detailed_path.exists():
             detailed = pd.read_csv(detailed_path)
             metrics_df = pd.DataFrame(metrics_rows) if metrics_rows else pd.DataFrame()
-            merged = detailed.merge(metrics_df, on=["model_id","family","prior_name"], how="left") \
-                     if not metrics_df.empty else detailed.copy()
-            merged = merged.sort_values(["global_rank","family","family_rank"], na_position="last")
-            (paths["tables"] / "all_models.csv").write_text(merged.to_csv(index=False), encoding="utf-8")
+            merged = detailed.merge(metrics_df, on=["model_id", "family", "prior_name"], how="left") \
+                if not metrics_df.empty else detailed.copy()
+            merged = merged.sort_values(["global_rank", "family", "family_rank"], na_position="last")
+            _safe_write_csv(merged, paths["tables"] / "all_models.csv")
             _log(ctx, "INFO", "Wrote all_models.csv", {"rows": int(len(merged))})
     except Exception as e:
         _log(ctx, "WARN", "Failed to write all_models.csv", {"error": str(e)})
 
     metrics_dir = paths["metrics"]; _ensure_dir(metrics_dir)
     if metrics_rows:
-        pd.DataFrame(metrics_rows).to_csv(metrics_dir / "baselines_metrics.csv", index=False)
+        _safe_write_csv(pd.DataFrame(metrics_rows), metrics_dir / "baselines_metrics.csv")
     if pit_hist_rows:
-        pd.DataFrame(pit_hist_rows).to_csv(metrics_dir / "baselines_pit_hist.csv", index=False)
+        _safe_write_csv(pd.DataFrame(pit_hist_rows), metrics_dir / "baselines_pit_hist.csv")
 
     _log(ctx, "INFO", "Stage completed", {"tables_root": str(paths["tables"]), "metrics_root": str(metrics_dir)})
 

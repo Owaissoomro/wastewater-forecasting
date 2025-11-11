@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Calibrated Priors (Swiss wastewater) — ZIBB + RW2
+ Priors (Swiss wastewater) — ZIBB + RW2
 
 From first principles:
   • Zero-Inflated Beta–Binomial (ZIBB) observation model per row:
@@ -110,7 +110,9 @@ def _read_feature_table(ctx: SimpleCtx, pri: Dict) -> tuple[pd.DataFrame, List[s
     return df.sort_values(["site_id","mutation","date"]).reset_index(drop=True), sorted(df["mutation"].unique())
 
 
-# -------------------- RW2 μ_t with correct uncertainty --------------------
+# -------------------- RW2 μ_t with  uncertainty --------------------
+
+
 def _make_rw2_penalty(T: int) -> np.ndarray:
     if T <= 2: return np.zeros((T,T))
     D = np.zeros((T-2, T))
@@ -119,6 +121,8 @@ def _make_rw2_penalty(T: int) -> np.ndarray:
         D[i, i+1] = -2.0
         D[i, i+2] = 1.0
     return D.T @ D
+
+
 def _fit_logistic_rw2(
     Y: np.ndarray,
     N: np.ndarray,
@@ -127,16 +131,13 @@ def _fit_logistic_rw2(
     tol: float = 1e-6
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Penalized logistic RW2:
-      minimizes   L(a) = sum_i [ -Y_i*a_i + N_i*softplus(a_i) ] + 0.5*lam_eff * a^T R a
-      with softplus(x) = log(1 + exp(x)) in a numerically stable form.
-
+    Penalized logistic RW2 with correct uncertainty from the *final* Hessian.
     Returns:
       a       : logit(μ_t) at optimum
       mu      : μ_t
       mu_lo   : μ_t 95% lower (via diag(inv(H)) on a, mapped through logistic)
       mu_hi   : μ_t 95% upper
-      var_a   : diag(inv(H)) for a_t
+      var_a   : diag(inv(H)) for a_t (computed by Cholesky at final iterate)
     """
     Y = np.asarray(Y, float)
     N = np.maximum(np.asarray(N, float), 1.0)
@@ -146,36 +147,35 @@ def _fit_logistic_rw2(
     # Mild scaling by coverage so extremely deep days do not dominate curvature
     lam_eff = float(lam / (1.0 + (np.mean(N) / 5e5)))
 
-    # Stable initial values (add 0.5 / 1.0 to reduce separation)
-    def _clip01s(x): return np.clip(x, 1e-8, 1 - 1e-8)
-    mu0 = _clip01s((Y + 0.5) / (N + 1.0))
-    a = logit(mu0)
-
-    # Stable softplus and objective
     def _softplus(x):
-        # log(1+exp(x)) computed stably
-        # = max(x,0) + log1p(exp(-|x|))
         m = np.maximum(x, 0.0)
         return m + np.log1p(np.exp(-np.abs(x)))
 
     def _obj(a_):
+        mu_ = expit(a_)
         return float(np.sum(N * _softplus(a_) - Y * a_) + 0.5 * lam_eff * (a_ @ (R @ a_)))
 
-    # Newton with backtracking line search (Armijo)
+    # Stable init (reduce separation)
+    def _clip01s(x): return np.clip(x, 1e-8, 1 - 1e-8)
+    mu0 = _clip01s((Y + 0.5) / (N + 1.0))
+    a = logit(mu0)
+
     f_prev = _obj(a)
+    I = np.eye(T)
+
     for _ in range(max_iter):
         mu = expit(a)
         g = N * mu - Y + lam_eff * (R @ a)
         Hd = N * mu * (1.0 - mu)
         H = np.diag(Hd) + lam_eff * R
-        # diagonal inflation to guarantee SPD
-        H[np.diag_indices_from(H)] += 1e-8
+        H[np.diag_indices_from(H)] += 1e-8  # ensure SPD
 
+        # Newton step via Cholesky (stable); fallback to dense solve if needed
         try:
-            step = np.linalg.solve(H, -g)
+            L = np.linalg.cholesky(H)
+            step = np.linalg.solve(L.T, np.linalg.solve(L, -g))
         except np.linalg.LinAlgError:
-            # Fallback: diagonally preconditioned gradient step
-            step = -g / np.maximum(np.diag(H), 1e-8)
+            step = -np.linalg.solve(H + 1e-8 * I, g)
 
         # Armijo backtracking
         t = 1.0
@@ -183,7 +183,7 @@ def _fit_logistic_rw2(
         gdotp = float(g @ step)
         a_new = a + t * step
         f_new = _obj(a_new)
-        while f_new > f_prev + c1 * t * gdotp and t > 1e-6:
+        while f_new > f_prev + c1 * t * gdotp and t > 1e-8:
             t *= 0.5
             a_new = a + t * step
             f_new = _obj(a_new)
@@ -194,21 +194,29 @@ def _fit_logistic_rw2(
             break
         f_prev = f_new
 
-    # Final quantities
+    # ----- Final-iterate uncertainty from final Hessian (recompute at 'a') -----
     mu = _clip01(expit(a), 1e-12)
+    Hd = N * mu * (1.0 - mu)
+    H = np.diag(Hd) + lam_eff * R
+    H[np.diag_indices_from(H)] += 1e-8
 
-    # Correct uncertainty: diag(inv(H))
     try:
-        H_inv = np.linalg.inv(H + 1e-12 * np.eye(T))
+        # H = L L^T; diag(H^{-1}) = column-wise squared norms of L^{-1}
+        L = np.linalg.cholesky(H)
+        # Solve L X = I → X = L^{-1}
+        X = np.linalg.solve(L, np.eye(T))
+        var_a = np.sum(X**2, axis=0)  # diag(H^{-1}) = diag((L^{-1})^T (L^{-1}))
     except np.linalg.LinAlgError:
-        H_inv = np.linalg.pinv(H + 1e-12 * np.eye(T))
-    var_a = np.clip(np.diag(H_inv), 1e-12, np.inf)
+        # Dense fallback (stable but slower)
+        H_inv = np.linalg.pinv(H)
+        var_a = np.diag(H_inv)
+
+    var_a = np.clip(var_a, 1e-12, np.inf)
     se_a = np.sqrt(var_a)
 
     z = 1.96
     mu_lo = _clip01(expit(a - z * se_a), 1e-12)
     mu_hi = _clip01(expit(a + z * se_a), 1e-12)
-
     return a, mu, mu_lo, mu_hi, var_a
 
 
@@ -218,6 +226,59 @@ def _prep_daily_for_mutation(df_m: pd.DataFrame) -> tuple[np.ndarray,np.ndarray,
 
 
 # -------------------- μ calibration (isotonic) --------------------
+def _apply_calibrator_with_slope(mu: np.ndarray, knots) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Apply calibrator and return both calibrated μ and the piecewise-linear slope C'(μ).
+    If 'knots' is None, it's the identity map with slope 1.
+    """
+    mu = _clip01(np.asarray(mu, float))
+    if knots is None:
+        return mu, np.ones_like(mu)
+
+    xk, yk = knots
+    mu_cal = np.interp(mu, xk, yk)
+
+    # piecewise-constant slope on segments
+    dx = np.diff(xk)
+    dy = np.diff(yk)
+    seg_slopes = dy / np.maximum(dx, 1e-12)
+    seg_idx = np.digitize(mu, xk[1:-1], right=True)
+    seg_idx = np.clip(seg_idx, 0, len(seg_slopes) - 1)
+    slope = seg_slopes[seg_idx]
+
+    return _clip01(mu_cal), np.clip(slope, 1e-12, 1e12)
+
+
+def _propagate_mu_uncertainty_through_calibration(
+    mu_uncal: np.ndarray,
+    var_a_uncal: np.ndarray,
+    knots,
+    z: float = 1.96
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Delta-method propagation for a' = logit(C(μ)), where μ = expit(a).
+    Returns: (μ_cal, var_a_cal, μ_lo_cal, μ_hi_cal)
+    """
+    mu_uncal = _clip01(np.asarray(mu_uncal, float), 1e-12)
+    var_a_uncal = np.asarray(var_a_uncal, float).clip(1e-18, np.inf)
+
+    mu_cal, Cprime = _apply_calibrator_with_slope(mu_uncal, knots)
+
+    # da'/da = [C'(μ) * μ(1-μ)] / [C(μ) * (1 - C(μ))]
+    num = Cprime * mu_uncal * (1.0 - mu_uncal)
+    den = mu_cal * (1.0 - mu_cal)
+    jac = np.clip(num / np.maximum(den, 1e-18), 0.0, np.inf)
+
+    var_a_cal = np.clip((jac ** 2) * var_a_uncal, 1e-18, np.inf)
+    se_cal = np.sqrt(var_a_cal)
+
+    a_cal = logit(_clip01(mu_cal, 1e-12))
+    mu_lo_cal = _clip01(expit(a_cal - z * se_cal), 1e-12)
+    mu_hi_cal = _clip01(expit(a_cal + z * se_cal), 1e-12)
+    return mu_cal, var_a_cal, mu_lo_cal, mu_hi_cal
+
+
+
 def _bin_by_mu(mu: np.ndarray, K: int) -> tuple[np.ndarray, np.ndarray]:
     mu = np.asarray(mu, float)
     if mu.size == 0: return np.zeros(0,int), np.array([0.0,1.0])
@@ -315,7 +376,7 @@ def _interp_log_kappa(mu: np.ndarray, edges: np.ndarray, kappas: np.ndarray) -> 
 
 # -------------------- Mixture (ZIBB) quantiles & coverage --------------------
 def _mix_logprob_y(y: np.ndarray, n: np.ndarray, mu: np.ndarray, kappa: np.ndarray, pi: np.ndarray) -> np.ndarray:
-    """Log probability for ZIBB mixture, numerically stable."""
+    """Log probability for ZIBB mixture"""
     a = _clip01(mu, 1e-12) * np.clip(kappa, 1e-12, 1e12)
     b = (1.0 - _clip01(mu, 1e-12)) * np.clip(kappa, 1e-12, 1e12)
     log_bb = betabinom.logpmf(y, n, a, b)
@@ -343,23 +404,20 @@ def _mixture_pmf_row(n: int, a: float, b: float, pi: float) -> np.ndarray:
 
 def _mixture_ppf_row(q: float, n: int, a: float, b: float, pi: float) -> int:
     """
-    Exact quantile for ZIBB via a closed-form mapping to the Beta-Binomial PPF:
-      F_mix(y) = π + (1-π) * F_BB(y)
-      => F_BB(y) >= (q - π) / (1 - π)
-    This is both exact and far faster than enumerating PMFs up to n.
+    Exact ZIBB quantile via mapping to Beta-Binomial plus explicit mass at 0.
     """
+    n = int(n)
+    if n <= 0:
+        return 0
     pi = float(np.clip(pi, 0.0, 1.0 - 1e-12))
-    if q <= 0.0: 
+    q = float(np.clip(q, 0.0, 1.0))
+    if q <= pi:
         return 0
     if q >= 1.0:
-        return int(n)
-
-    denom = max(1.0 - pi, 1e-12)
-    q_bb = np.clip((q - pi) / denom, 0.0, 1.0)
-    # scipy.stats.betabinom.ppf is vectorized; here used scalar
-    y = betabinom.ppf(q_bb, int(n), float(a), float(b))
+        return n
+    q_bb = (q - pi) / (1.0 - pi)
+    y = betabinom.ppf(q_bb, n, float(a), float(b))
     return int(y)
-
 
 def _mixture_coverage(y: np.ndarray, n: np.ndarray, mu: np.ndarray, kappa: np.ndarray,
                       pi: np.ndarray, qlo: float, qhi: float) -> float:
@@ -380,55 +438,161 @@ def _calibrate_tau_per_bin_mixture(
     bounds: tuple[float,float]=(1.0,200.0), max_iter: int=18, tol: float=0.01, min_rows_per_bin: int=200
 ) -> np.ndarray:
     """
-    Per-μ-bin τ calibration for ZIBB mixture that ONLY WIDENS (τ >= 1).
-    This fixes 90% under-coverage without creating razor-thin tails.
+    Per-μ-bin τ calibration for ZIBB mixture that ONLY WIDENS (τ >= 1),
+    using the exact fixed μ-bin `edges` from EM (no re-binning drift).
     """
-    K = edges.size - 1
-    idx,_ = _bin_by_mu(mu, K)
+    y = np.asarray(y, int)
+    n = np.maximum(np.asarray(n, int), 1)
+    mu = _clip01(np.asarray(mu, float), 1e-12)
+    kappa = np.clip(np.asarray(kappa, float), 1e-12, 1e12)
+    pi = np.clip(np.asarray(pi, float), 0.0, 0.99)
+
+    K = int(edges.size - 1)
+    idx = np.digitize(mu, edges[1:-1], right=True)   # <-- fixed edges
     tau = np.ones(K, float)
 
-    lo = max(1.0, float(bounds[0]))     # enforce widen-only
+    lo = max(1.0, float(bounds[0]))
     hi = max(lo * 1.0001, float(bounds[1]))
 
     def worst_gap_subset(mask, tau_):
-        kb = kappa[mask] / max(tau_, 1.0)  # τ widens → κ' = κ/τ ≤ κ
-        gaps=[]
+        kb = kappa[mask] / max(tau_, 1.0)
+        gaps = []
         for t in targets:
-            qlo = (1.0 - t)/2.0; qhi = (1.0 + t)/2.0
+            qlo = (1.0 - t) * 0.5
+            qhi = (1.0 + t) * 0.5
             gaps.append(_mixture_coverage(y[mask], n[mask], mu[mask], kb, pi[mask], qlo, qhi) - t)
-        return min(gaps)  # the worst target gap (negative means under-coverage)
+        return min(gaps)  # negative => under-coverage
 
     for b in range(K):
-        m = (idx==b)
-        if int(np.sum(m)) < min_rows_per_bin:
-            tau[b]=1.0
+        m = (idx == b)
+        if int(np.sum(m)) < int(min_rows_per_bin):
+            tau[b] = 1.0
             continue
 
         g_lo = worst_gap_subset(m, lo)
         g_hi = worst_gap_subset(m, hi)
 
-        # If already over-covered at lo, keep it small
         if g_lo >= -tol:
             tau[b] = lo
             continue
-        # If still under-covered at hi, push to hi
         if g_hi <= -tol:
             tau[b] = hi
             continue
 
-        left,right = lo,hi
+        left, right = lo, hi
         for _ in range(max_iter):
-            mid = float(np.sqrt(left*right))
+            mid = float(np.sqrt(left * right))
             g_mid = worst_gap_subset(m, mid)
             if abs(g_mid) <= tol:
                 left = right = mid
                 break
-            if g_mid < 0:   # under-covered → widen more
+            if g_mid < 0.0:
                 left = mid
             else:
                 right = mid
-        tau[b] = float(np.sqrt(left*right))
+        tau[b] = float(np.sqrt(left * right))
+
     return np.clip(tau, lo, hi)
+
+
+
+def _bin_by_mu_adaptive(mu: np.ndarray, K: int, min_rows_per_bin: int) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Start with K μ-quantile edges, then merge the scarcest adjacent bin
+    until every bin has ≥ min_rows_per_bin rows (or only 2 bins remain).
+    Returns (idx, edges) with idx computed under the final edges.
+    """
+    mu = _clip01(np.asarray(mu, float))
+    if mu.size == 0:
+        return np.zeros(0, int), np.array([0.0, 1.0], float)
+
+    qs = np.linspace(0.0, 1.0, max(2, int(K)) + 1)
+    edges = np.unique(np.quantile(mu, qs))
+    if edges.size < 3:
+        edges = np.array([float(np.min(mu)), float(np.max(mu))])
+        if not np.isfinite(edges).all() or edges[0] == edges[1]:
+            return np.zeros_like(mu, int), np.array([0.0, 1.0], float)
+        edges = np.linspace(edges[0], edges[1], 3)
+
+    def _counts(ed):
+        idx_ = np.digitize(mu, ed[1:-1], right=True)
+        cnt_ = np.bincount(idx_, minlength=ed.size - 1)
+        return idx_, cnt_
+
+    idx, counts = _counts(edges)
+    while (counts.min() < max(1, int(min_rows_per_bin))) and (edges.size > 3):
+        b = int(np.argmin(counts))
+        # remove the closer/smaller neighbor edge
+        if b == 0:
+            remove = 1
+        elif b == len(counts) - 1:
+            remove = len(edges) - 2
+        else:
+            remove = b if counts[b-1] <= counts[b+1] else (b + 1)
+        edges = np.delete(edges, remove)
+        idx, counts = _counts(edges)
+
+    return idx.astype(int), np.asarray(edges, float)
+
+
+def _kappa_by_edges_moments_weighted(
+    mu: np.ndarray, y: np.ndarray, n: np.ndarray, w: np.ndarray,
+    edges: np.ndarray, k_lo: float, k_hi: float, winsor: float = 0.02
+) -> np.ndarray:
+    """
+    κ(μ) via weighted moment match within *fixed* μ-bins `edges`.
+    Mild winsorization stabilizes tails; keeps output in [k_lo, k_hi].
+    """
+    mu = _clip01(np.asarray(mu, float), 1e-12)
+    y  = np.asarray(y, int)
+    n  = np.maximum(np.asarray(n, int), 1)
+    w  = np.asarray(w, float)
+
+    idx = np.digitize(mu, edges[1:-1], right=True)
+    K   = edges.size - 1
+    kappas = np.full(K, float(k_hi), float)
+
+    p = y / n
+    for b in range(K):
+        m = (idx == b)
+        if np.sum(m) < 5:
+            continue
+        wb = w[m]
+        if wb.sum() <= 0:
+            continue
+        mu_b = mu[m]; n_b = n[m]; p_b = p[m]
+
+        # winsorize p within the bin to prevent pathological denom
+        if 0.0 < winsor < 0.5 and p_b.size >= 20:
+            lo, hi = np.quantile(p_b, [winsor, 1 - winsor])
+            p_b = np.clip(p_b, lo, hi)
+
+        var_emp = _weighted_var(p_b, wb)
+        W_bar   = float(np.sum(wb * (mu_b*(1-mu_b)/n_b)) / wb.sum())
+        C_bar   = float(np.sum(wb * (mu_b*(1-mu_b)*(n_b-1)/n_b)) / wb.sum())
+        denom   = var_emp - W_bar
+        k_est   = C_bar / denom - 1.0 if denom > 1e-12 else k_hi
+        kappas[b] = float(np.clip(k_est, k_lo, k_hi))
+    return kappas
+
+
+def _update_pi_bins_from_r(idx: np.ndarray, r: np.ndarray, centers: np.ndarray, min_rows_per_bin: int) -> np.ndarray:
+    """
+    Update π per μ-bin from responsibilities r with Beta(0.5, 5.5) shrinkage.
+    No hard μ-threshold gating—lets the data set structural-zero mass.
+    """
+    K = centers.size
+    pi_bins = np.zeros(K, float)
+    for b in range(K):
+        m = (idx == b)
+        m_sum = int(np.sum(m))
+        if m_sum < int(min_rows_per_bin):
+            continue
+        r_sum = float(np.sum(r[m]))
+        pi_bins[b] = float(np.clip((r_sum + 0.5) / (m_sum + 0.5 + 5.0), 0.0, 0.99))
+    return pi_bins
+
+
 def _em_zibb_fit_per_mutation(
     ctx: SimpleCtx, mutation: str, df_m: pd.DataFrame,
     lam_rw2: float, kappa_bounds: tuple[float,float], K_bins: int, mu_floor_c: float,
@@ -436,106 +600,92 @@ def _em_zibb_fit_per_mutation(
 ) -> dict:
     # Aggregate daily
     Yd, Nd, dates = _prep_daily_for_mutation(df_m)
-    a_t, mu_t, mu_t_lo, mu_t_hi, var_a_t = _fit_logistic_rw2(Yd, Nd, lam=lam_rw2)
+    a_t, mu_t_raw, _, _, var_a_t_raw = _fit_logistic_rw2(Yd, Nd, lam=lam_rw2)
 
     # Map rows to days
     day_index = {d:i for i,d in enumerate(dates)}
     tg = df_m["date"].map(day_index).to_numpy(int)
-    y  = df_m["count"].to_numpy(int)
-    n  = df_m["coverage"].to_numpy(int)
-    y  = np.clip(y, 0, None)  # safety
+    y  = np.clip(df_m["count"].to_numpy(int), 0, None)
+    n  = np.maximum(df_m["coverage"].to_numpy(int), 1)
 
-    # Initial μ rows
-    mu_rows = mu_t[tg].copy()
-
-    # Gentle μ floor (cap at 5%)
+    # Initial μ (raw) per row/day + gentle floor
+    mu_rows_raw = mu_t_raw[tg].copy()
     if mu_floor_c > 0:
-        floor_rows = np.minimum(mu_floor_c / np.maximum(n, 1), 0.05)
-        mu_rows = np.maximum(mu_rows, floor_rows)
-        mu_t    = np.maximum(mu_t, np.minimum(mu_floor_c / np.maximum(Nd,1), 0.05))
+        floor_rows = np.minimum(mu_floor_c / n, 0.05)
+        mu_rows_raw = np.maximum(mu_rows_raw, floor_rows)
+        mu_t_raw    = np.maximum(mu_t_raw, np.minimum(mu_floor_c / np.maximum(Nd,1), 0.05))
 
-    # μ calibration (optional)
-    mu_knots = _build_calibrator(mu_rows, y, n, K_bins) if use_mu_calibration else None
-    def _cal(v): return _apply_calibrator(v, mu_knots)
-    mu_rows = _cal(mu_rows)
-    mu_t    = _cal(mu_t)
+    # μ calibration (optional) — build once, reuse in EM
+    mu_knots = _build_calibrator(mu_rows_raw, y, n, K_bins) if use_mu_calibration else None
 
-    # κ(μ) init (weighted moments)
+    # Apply calibration + propagate uncertainty to the day-level μ_t
+    mu_rows = _apply_calibrator(mu_rows_raw, mu_knots)
+    mu_t, var_a_t, mu_t_lo, mu_t_hi = _propagate_mu_uncertainty_through_calibration(mu_t_raw, var_a_t_raw, mu_knots)
+
+    # Build adaptive μ-bins once, keep fixed across EM & τ
     k_lo, k_hi = kappa_bounds
-    kappas_bin, edges = _kappa_by_decile_moments_weighted(mu_rows, y, n, np.ones_like(y), K_bins, k_lo, k_hi)
+    idx, edges = _bin_by_mu_adaptive(mu_rows, int(K_bins), int(min_rows_per_bin))
+
+    # Initial κ(μ) in fixed bins
+    kappas_bin = _kappa_by_edges_moments_weighted(mu_rows, y, n, np.ones_like(y, float), edges, k_lo, k_hi)
     kappa_rows = _interp_log_kappa(mu_rows, edges, kappas_bin)
 
-    # π init by zero rate, then gate & shrink
-    idx,_ = _bin_by_mu(mu_rows, K_bins)
-    pi_bins = np.zeros(K_bins, float)
+    # π init from a weak proxy responsibilities (a little mass on y==0)
     centers = 0.5*(edges[:-1] + edges[1:])
-    for b in range(K_bins):
-        m = (idx==b)
-        if np.sum(m) < min_rows_per_bin:
-            pi_bins[b] = 0.0
-            continue
-        if centers[b] > 0.15:
-            pi_bins[b] = 0.0
-        else:
-            zr = float(np.mean(y[m] == 0))
-            m_sum = int(np.sum(m))
-            pi_bins[b] = float(np.clip((zr*m_sum + 0.5) / (m_sum + 0.5 + 5.0), 0.0, 0.99))
+    r_boot = (y == 0).astype(float) * 0.25
+    pi_bins = _update_pi_bins_from_r(idx, r_boot, centers, min_rows_per_bin)
 
     # EM iterations
-    r = np.zeros_like(y, float)  # responsibilities for structural zero
+    r = np.zeros_like(y, float)
     for _ in range(max(1, em_iters)):
-        # --- E-step (log-space) ---
+        # --- E-step ---
+        idx = np.digitize(mu_rows, edges[1:-1], right=True)
         pi_rows = np.clip(pi_bins[idx], 0.0, 0.99)
         r[:] = 0.0
-        z = (y == 0)
-        if np.any(z):
-            a = _clip01(mu_rows[z], 1e-12) * np.clip(kappa_rows[z], 1e-12, 1e12)
-            b = (1.0 - _clip01(mu_rows[z], 1e-12)) * np.clip(kappa_rows[z], 1e-12, 1e12)
-            log_pi   = np.log(np.clip(pi_rows[z], 1e-12, 1.0 - 1e-12))
-            log1m_pi = np.log1p(-pi_rows[z])
-            log_bb0  = betabinom.logpmf(0, n[z], a, b)
+        zmask = (y == 0)
+        if np.any(zmask):
+            a = _clip01(mu_rows[zmask], 1e-12) * np.clip(kappa_rows[zmask], 1e-12, 1e12)
+            b = (1.0 - _clip01(mu_rows[zmask], 1e-12)) * np.clip(kappa_rows[zmask], 1e-12, 1e12)
+            log_pi   = np.log(np.clip(pi_rows[zmask], 1e-12, 1.0 - 1e-12))
+            log1m_pi = np.log1p(-pi_rows[zmask])
+            log_bb0  = betabinom.logpmf(0, n[zmask], a, b)
             log_den  = logsumexp(np.vstack([log_pi, log1m_pi + log_bb0]), axis=0)
-            r[z] = np.exp(log_pi - log_den)
+            r[zmask] = np.exp(log_pi - log_den)
 
         # --- M-step: weighted RW2 for μ_t ---
         w_eff = (1.0 - r)
         Yd_w = np.bincount(tg, weights=w_eff*y, minlength=len(dates))
         Nd_w = np.bincount(tg, weights=w_eff*n, minlength=len(dates))
-        a_t, mu_t, mu_t_lo, mu_t_hi, var_a_t = _fit_logistic_rw2(Yd_w, np.maximum(Nd_w, 1), lam=lam_rw2)
+        a_t, mu_t_raw, _, _, var_a_t_raw = _fit_logistic_rw2(Yd_w, np.maximum(Nd_w, 1), lam=lam_rw2)
 
-        # Map back to rows + gentle floor + calibration
-        mu_rows = mu_t[tg].copy()
+        # Map back to rows + floor
+        mu_rows_raw = mu_t_raw[tg].copy()
         if mu_floor_c > 0:
-            floor_rows = np.minimum(mu_floor_c / np.maximum(n, 1), 0.05)
-            mu_rows = np.maximum(mu_rows, floor_rows)
-            mu_t    = np.maximum(mu_t, np.minimum(mu_floor_c / np.maximum(Nd,1), 0.05))
-        mu_rows = _cal(mu_rows)
-        mu_t    = _cal(mu_t)
+            floor_rows = np.minimum(mu_floor_c / n, 0.05)
+            mu_rows_raw = np.maximum(mu_rows_raw, floor_rows)
+            mu_t_raw    = np.maximum(mu_t_raw, np.minimum(mu_floor_c / np.maximum(Nd,1), 0.05))
 
-        # Update κ(μ) via weighted moments
-        kappas_bin, edges = _kappa_by_decile_moments_weighted(mu_rows, y, n, w_eff, K_bins, k_lo, k_hi)
+        # Apply calibration & propagate uncertainty (day-level)
+        mu_rows = _apply_calibrator(mu_rows_raw, mu_knots)
+        mu_t, var_a_t, mu_t_lo, mu_t_hi = _propagate_mu_uncertainty_through_calibration(mu_t_raw, var_a_t_raw, mu_knots)
+
+        # Update κ(μ) with fixed edges
+        kappas_bin = _kappa_by_edges_moments_weighted(mu_rows, y, n, w_eff, edges, k_lo, k_hi)
         kappa_rows = _interp_log_kappa(mu_rows, edges, kappas_bin)
 
-        # Update π per μ-bin with gating + shrinkage
-        idx,_ = _bin_by_mu(mu_rows, K_bins)
+        # Update π from responsibilities with shrinkage (no hard μ threshold)
+        idx = np.digitize(mu_rows, edges[1:-1], right=True)
         centers = 0.5*(edges[:-1] + edges[1:])
-        for b in range(K_bins):
-            m = (idx==b)
-            if np.sum(m) < min_rows_per_bin:
-                continue
-            if centers[b] > 0.15:
-                pi_bins[b] = 0.0
-            else:
-                r_sum = float(np.sum(r[m]))
-                m_sum = int(np.sum(m))
-                pi_bins[b] = float(np.clip((r_sum + 0.5) / (m_sum + 0.5 + 5.0), 0.0, 0.99))
+        pi_bins = _update_pi_bins_from_r(idx, r, centers, min_rows_per_bin)
 
+    idx = np.digitize(mu_rows, edges[1:-1], right=True)
     return {
         "mu_rows": mu_rows,
         "mu_t": mu_t, "mu_t_lo": mu_t_lo, "mu_t_hi": mu_t_hi,
         "var_a_t": var_a_t,
         "kappa_rows": kappa_rows, "edges": edges, "pi_bins": pi_bins, "idx": idx, "dates": dates
     }
+
 
 # -------------------- Per-mutation export (with τ calibration and mixture PIs) --------------------
 def _export_mutation(
@@ -627,7 +777,7 @@ def _export_mutation(
     }]).to_csv(p_hyper, mode="a", header=not os.path.exists(p_hyper), index=False)
 
     # --- Per-day GLOBAL summary (τ-calibrated κ) ---
-    mu_day_bins, _ = _bin_by_mu(mu_t, edges.size - 1)
+    mu_day_bins = np.digitize(mu_t, edges[1:-1], right=True)
     tau_days  = tau_bins[mu_day_bins]
 
     # Smooth per-day κ by interpolating log κ across μ bins using row weights

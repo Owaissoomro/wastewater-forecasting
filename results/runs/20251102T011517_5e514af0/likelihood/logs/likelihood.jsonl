@@ -1,6 +1,0 @@
-{"time": "2025-11-02T01:15:17.826156+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251102T011517_5e514af0", "stage_seed": 16235217562376, "cfg_digest": "9851e0d5a65d498fcb58bc73c2d2a454a2f9a152a3061d24c6aa35890a9866d9"}}
-{"time": "2025-11-02T01:15:17.000", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Starting stage 'likelihood'", "context": {"seed": 12345}}
-{"time": "2025-11-02T01:15:17.829158+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Likelihood v4.2 (robust BB‑IRLS) starting", "context": {"seed": 12345, "aggregate_by_date": true, "prior_only": false}}
-{"time": "2025-11-02T01:15:17.833180+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Priors: mutation universe", "context": {"M_priors": 62}}
-{"time": "2025-11-02T01:15:17.851333+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Signatures shape (M×K)", "context": {"M": 62, "K": 5}}
-{"time": "2025-11-02T01:15:19.000", "level": "ERROR", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Stage 'likelihood' failed", "context": {"error": "name 'overlap_penalty_lambda' is not defined"}}

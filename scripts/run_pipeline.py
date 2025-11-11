@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Wright–Fisher Variant Forecasting — Minimal Pipeline Runner
 
-Stages (canonical + aliases):
-  preprocessing (prep)
-  priors        (prior)
-  likelihood    (like, deconv)
-  baseline      (base, baselines)
-"""
 
 from __future__ import annotations
 

@@ -1,6 +1,0 @@
-{"time": "2025-10-27T04:22:11.563169+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251027T042211_afcc3f43", "stage_seed": 16237916840204, "cfg_digest": "d1287d4e1dd99922736d783b7f5a8ce4e9b722a17c9c0db0f83dd46af8c176d2"}}
-{"time": "2025-10-27T04:22:11.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
-{"time": "2025-10-27T04:22:11.665209+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store from preprocessing", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
-{"time": "2025-10-27T04:22:11.702923+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting Beta–Binomial priors", "context": {"stage": "priors", "n_rows": 60251, "n_mut": 62}}
-{"time": "2025-10-27T04:22:16.747070+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Computing time-local priors", "context": {"window_days": 28, "per_site": true}}
-{"time": "2025-10-27T04:22:42.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "name '_compute_prior_predictive_pit' is not defined"}}

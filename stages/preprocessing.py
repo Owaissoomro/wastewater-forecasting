@@ -3,17 +3,6 @@
 # -*- coding: utf-8 -*-
 
 """
-Oxford-ready, PNG-only preprocessing pipeline (lean by default).
-
-Drop-in replacement for your existing script. Key changes:
-  • Forces PNG output only (no PDFs), with OUP Bioinformatics-friendly rcParams.
-  • Adds "lean" mode switches to limit memory/size (subsampling & gating KDEs).
-  • Lets you skip heavy figures via YAML (preprocessing.skip_figures).
-  • Allows capping sites processed (preprocessing.site_max) and max lineages per site.
-
-Usage:
-  from oxford_preprocessing import run_preprocessing
-  run_preprocessing(cfg, ctx)
 
 Config knobs (YAML):
   preprocessing:
@@ -88,7 +77,7 @@ except Exception:
 
 
 # ============================================================
-# PNG-only helpers (OUP Bioinformatics ready)
+# PNG-only helpers (OUP Bioinformatics style)
 # ============================================================
 
 def _set_oup_png_defaults(dpi: int = 120) -> None:
@@ -111,7 +100,7 @@ def _set_oup_png_defaults(dpi: int = 120) -> None:
 
 
 def _make_png_writer(ctx, figures_dir: str, figure_dpi: int = 120, compress_level: int = 9):
-    """Return a function that *replaces* ctx.write_figure and writes PNG only."""
+    """Return a function that ctx.write_figure and writes PNG only."""
     os.makedirs(figures_dir, exist_ok=True)
     def _writer(key: str, fig):
         out_path = os.path.join(figures_dir, f"{key}.png")
@@ -503,7 +492,7 @@ def compute_bias_loci(
 
 
 # ============================================================
-# Figures (lean-aware)
+# Figures 
 # ============================================================
 
 def bias_loci_figure(bias_df: pd.DataFrame) -> "plt.Figure":
@@ -1381,7 +1370,7 @@ def site_lineage_index_figure(
 ) -> plt.Figure:
     """
     Lineage evolution index (per site) with a framed legend centered under the plot.
-    PNG-friendly, no compound statements after semicolons.
+    .
     """
     import matplotlib.dates as mdates
 

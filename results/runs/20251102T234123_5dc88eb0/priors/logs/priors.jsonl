@@ -1,7 +1,0 @@
-{"time": "2025-11-02T23:41:23.536226+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251102T234123_5dc88eb0", "stage_seed": 16238855602430, "cfg_digest": "5a93b5d14b6939a8eaeb3784ee9d0f95499b72088b1f12c7d7d72ca903dbb3d3"}}
-{"time": "2025-11-02T23:41:23.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
-{"time": "2025-11-02T23:41:23.537558+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
-{"time": "2025-11-02T23:41:23.538559+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
-{"time": "2025-11-02T23:41:23.586620+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Building weights", "context": {}}
-{"time": "2025-11-02T23:41:23.613722+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Compiling Stan model", "context": {"stan_file": "C:\\Users\\osoom\\OneDrive\\Desktop\\ssssssss\\oxbio-variant-forecasting\\results\\priors\\bb_hds_one_mutation.stan"}}
-{"time": "2025-11-03T01:43:23.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "'InferenceMetadata' object has no attribute 'stan_vars_dims'"}}

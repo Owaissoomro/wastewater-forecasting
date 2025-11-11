@@ -1,7 +1,0 @@
-{"time": "2025-11-02T09:15:38.607207+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251102T091538_013cb770", "stage_seed": 16237711723560, "cfg_digest": "5a93b5d14b6939a8eaeb3784ee9d0f95499b72088b1f12c7d7d72ca903dbb3d3"}}
-{"time": "2025-11-02T09:15:38.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
-{"time": "2025-11-02T09:15:38.609208+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
-{"time": "2025-11-02T09:15:38.609208+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
-{"time": "2025-11-02T09:15:38.642665+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Building weights", "context": {}}
-{"time": "2025-11-02T09:15:38.674439+00:00", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "CmdStan check/install failed: No CmdStan directory, path C:\\Users\\osoom\\.cmdstan\\cmdstan-2.37.0 does not exist.", "context": {}}
-{"time": "2025-11-02T09:15:38.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "No CmdStan directory, path C:\\Users\\osoom\\.cmdstan\\cmdstan-2.37.0 does not exist."}}

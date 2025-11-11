@@ -1,8 +1,0 @@
-{"time": "2025-11-02T07:24:51.113718+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251102T072451_93a095c3", "stage_seed": 16236945558554, "cfg_digest": "5a93b5d14b6939a8eaeb3784ee9d0f95499b72088b1f12c7d7d72ca903dbb3d3"}}
-{"time": "2025-11-02T07:24:51.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
-{"time": "2025-11-02T07:24:51.117133+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
-{"time": "2025-11-02T07:24:51.117133+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
-{"time": "2025-11-02T07:24:51.165083+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Per-mutation MLE → EB", "context": {}}
-{"time": "2025-11-02T07:24:51.290540+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Global mutation trends (multi-site fusion, population×flow×QC weighted)", "context": {}}
-{"time": "2025-11-02T07:24:51.376721+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Tuning process noise per mutation via predictive likelihood", "context": {}}
-{"time": "2025-11-02T07:24:51.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "operands could not be broadcast together with shapes (2,) (21,) "}}

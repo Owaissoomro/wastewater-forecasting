@@ -1,7 +1,0 @@
-{"time": "2025-11-04T00:31:54.440101+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251104T003154_0789943b", "stage_seed": 16238365695042, "cfg_digest": "8bb56f01a2683f0f29b8761af3990b26f5d76b737d847859fb03d3cd99293019"}}
-{"time": "2025-11-04T00:31:54.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
-{"time": "2025-11-04T00:31:54.442100+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loading counts", "context": {}}
-{"time": "2025-11-04T00:31:54.443099+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
-{"time": "2025-11-04T00:31:54.706886+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Compiling/Loading Stan model", "context": {"stan_file": "C:\\Users\\osoom\\OneDrive\\Desktop\\ssssssss\\oxbio-variant-forecasting\\results\\priors\\bb_hds_one_mutation.stan"}}
-{"time": "2025-11-04T00:32:25.845240+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Running ADVI (fullrank) for mutation AA:E:P71L", "context": {}}
-{"time": "2025-11-04T00:36:47.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "Error during variational inference: "}}

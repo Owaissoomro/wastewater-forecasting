@@ -1,6 +1,0 @@
-{"time": "2025-10-27T01:52:26.875541+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251027T014804_b0f49f8e", "stage_seed": 16235127444526, "cfg_digest": "503b4778b808ff8c6aadd5998e6e03acc5407102d8615abc35450731201a005c"}}
-{"time": "2025-10-27T01:52:26.000", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Starting stage 'priors'", "context": {"seed": 12345}}
-{"time": "2025-10-27T01:52:26.991571+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Loaded SNV feature store from preprocessing", "context": {"path": "results\\preprocessing\\tables\\feature_store_snv.csv"}}
-{"time": "2025-10-27T01:52:27.012875+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Filtered low coverage", "context": {"min_coverage": 25, "kept": 60251, "dropped": 0}}
-{"time": "2025-10-27T01:52:27.026868+00:00", "level": "INFO", "stage": "priors", "site_id": null, "lineage": null, "message": "Fitting Beta–Binomial priors", "context": {"stage": "priors", "n_rows": 60251, "n_mut": 62}}
-{"time": "2025-10-27T02:20:27.000", "level": "ERROR", "stage": "priors", "site_id": null, "lineage": null, "message": "Stage 'priors' failed", "context": {"error": "In RendererAgg: Out of memory"}}

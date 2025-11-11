@@ -1,6 +1,0 @@
-{"time": "2025-11-02T04:56:38.815544+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Stage started", "context": {"run_id": "20251102T045638_1d00c573", "stage_seed": 16237834888051, "cfg_digest": "5a93b5d14b6939a8eaeb3784ee9d0f95499b72088b1f12c7d7d72ca903dbb3d3"}}
-{"time": "2025-11-02T04:56:38.000", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Starting stage 'likelihood'", "context": {"seed": 12345}}
-{"time": "2025-11-02T04:56:38.817243+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Likelihood v4.3 (robust BB–IRLS) starting", "context": {"seed": 12345, "aggregate_by_date": true, "prior_only": true}}
-{"time": "2025-11-02T04:56:38.822250+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Priors: mutation universe", "context": {"M_priors": 62}}
-{"time": "2025-11-02T04:56:38.836681+00:00", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Signatures shape (M×K)", "context": {"M": 62, "K": 5}}
-{"time": "2025-11-02T05:03:28.000", "level": "INFO", "stage": "likelihood", "site_id": null, "lineage": null, "message": "Completed stage 'likelihood'", "context": {}}
