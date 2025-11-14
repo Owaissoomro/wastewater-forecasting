@@ -112,7 +112,6 @@ def _read_feature_table(ctx: SimpleCtx, pri: Dict) -> tuple[pd.DataFrame, List[s
 
 # -------------------- RW2 μ_t with  uncertainty --------------------
 
-
 def _make_rw2_penalty(T: int) -> np.ndarray:
     if T <= 2: return np.zeros((T,T))
     D = np.zeros((T-2, T))
@@ -781,7 +780,6 @@ def _export_mutation(
     tau_days  = tau_bins[mu_day_bins]
 
     # Smooth per-day κ by interpolating log κ across μ bins using row weights
-    # (same approach you had, just kept explicit)
     bin_weights = np.bincount(idx, weights=kappa_rows, minlength=edges.size - 1)
     bin_counts  = np.bincount(idx, minlength=edges.size - 1)
     with np.errstate(invalid="ignore", divide="ignore"):

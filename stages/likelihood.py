@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Likelihood —  Beta–Binomial IRLS + ADMM on Δ (NumPy, strict paths, lean)
+Likelihood —  Beta–Binomial IRLS + ADMM on Δ 
 - θ solved under simplex (sum-to-1, nonnegative), per site × date
 - Signatures S allow a mutation to belong to multiple lineages (row mass capped at 1)
 - GLOBAL column soaks residual row mass (1 - sum_known)+, with tiny ridge for identifiability
@@ -339,7 +339,7 @@ def _zscore_df(res: pd.DataFrame) -> pd.DataFrame:
     out.replace([np.inf,-np.inf], np.nan, inplace=True)
     return out
 
-# -------------------- Site solver (IRLS → ADMM) --------------------
+# -------------------- Site solver (IRLS -> ADMM) --------------------
 def _solve_site(S: np.ndarray, yL: List[np.ndarray], nL: List[np.ndarray],
                 mu_vec: np.ndarray, kap_vec: np.ndarray, lam_ridge: float,
                 lam_l2_vec: np.ndarray, O_pen: Optional[np.ndarray], lam_ov: float,

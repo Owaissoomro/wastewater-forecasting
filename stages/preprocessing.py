@@ -970,7 +970,7 @@ def coverage_ecdf_by_site_figure(df: pd.DataFrame, *, lean: bool = False, points
         n = vals.size
         if n == 0: continue
 
-        # Lean: quantile-based ECDF to reduce path size
+        # quantile-based ECDF to reduce path size
         if lean and n > points_per_site:
             qs = np.linspace(0, 1, points_per_site, endpoint=True)
             # Use unique steps to avoid duplicates
@@ -1175,7 +1175,7 @@ def site_analysis_panel(
     site_id: str,
     mut_to_color: Dict[str, tuple],
 ) -> plt.Figure:
-    # Keep heavy panel present (users can skip via YAML if desired)
+    # heavy panel present (users can skip via YAML if desired)
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
@@ -1369,7 +1369,7 @@ def site_lineage_index_figure(
     site_id: str,
 ) -> plt.Figure:
     """
-    Lineage evolution index (per site) with a framed legend centered under the plot.
+    Lineage evolution index (per site).
     .
     """
     import matplotlib.dates as mdates
@@ -1406,7 +1406,7 @@ def site_lineage_index_figure(
         w = float(row["weight"]) if has_weight else 1.0
         lin_to_mw.setdefault(lin, {})[mut] = w
 
-    # Optional pretty labels
+    # Optional  labels
     label_map: Dict[str, str] = {}
     if lineages_df is not None and set(["lineage", "label"]).issubset(lineages_df.columns):
         label_map = dict(
@@ -1967,7 +1967,7 @@ def run_preprocessing(cfg: Dict, ctx: RunContext) -> Dict:
             key_evo = f"site_{_sanitize_key(site)}_evo"
             ctx.write_figure(key_evo, fig_evo); plt.close(fig_evo); site_evo_keys.append(key_evo)
 
-    # --- Global biostatistics (images only) ---
+    # --- Global biostatistics ---
     if "alt_ref_scatter" not in skip_figures:
         fig_ar = alt_ref_scatter_figure(df_clean, pcfg.left_censor_af, label_suffix=None, lean=lean, max_points=scatter_max_points, seed=pcfg.seed)
         ctx.write_figure("biostats_alt_vs_ref", fig_ar); plt.close(fig_ar)

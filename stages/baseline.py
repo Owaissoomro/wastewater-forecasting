@@ -20,7 +20,7 @@ metrics/
   - baselines_metrics.csv
   - baselines_pit_hist.csv
 
-Folder rule (no duplicated 'baseline'):
+Folder rules
 - If cfg.baseline.save_root is set -> use it AS-IS
 - Else -> (cfg.io.results_dir or 'results')/baseline
 """
@@ -48,7 +48,6 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 np.seterr(all="ignore")  # safely handle tail behavior; we clip where needed.
 
 # ---------------- Constants ----------------
-# Use singular folder name to match your tree: results\\baseline\\...
 OUT_DIR_NAME = "baseline"
 PIT_BINS = 20  # PIT histogram bins (mid-CDF binned uniformity check)
 
