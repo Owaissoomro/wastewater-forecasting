@@ -13,8 +13,8 @@ python-dateutil==2.9.0.post0
 pydantic==2.9.2
 
 # JAX (for gradient-based inference and numerical differentiation)
-jax==0.4.33
-jaxlib==0.4.33
+jax
+jaxlib
 
 # JAX optimization helpers (CPU-safe)
 jaxopt==0.8.3
