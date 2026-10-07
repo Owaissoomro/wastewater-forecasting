@@ -2,8 +2,8 @@
 """
 Likelihood —  Beta–Binomial IRLS + ADMM on Δ 
 - θ solved under simplex (sum-to-1, nonnegative), per site × date
-- Signatures S allow a mutation to belong to multiple lineages (row mass capped at 1)
-- GLOBAL column soaks residual row mass (1 - sum_known)+, with tiny ridge for identifiability
+- Signatures S are binary membership (mutation may belong to any number of lineages; no row-mass cap)
+- S is built by utils.signatures.build_signature_matrix, shared with the forecast stage
 - Uncertainty = equality-constrained Laplace (simplex tangent) + sandwich "meat"
 - Per-site/date z-score MAD calibration (phi >= 1) for conservative bands
 """
@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from pandas.errors import ParserError
+from utils.signatures import build_signature_matrix
 
 EPS = 1e-9
 ACTIVE_EPS = 1e-6
@@ -172,45 +173,17 @@ def _mu_kappa(pri: pd.DataFrame, muts: List[str]) -> Tuple[np.ndarray, np.ndarra
 
 def _build_S(sig: pd.DataFrame, muts: List[str], ctx: RunContext) -> Tuple[pd.DataFrame, np.ndarray, List[str], List[str]]:
     """
-    Build signatures matrix S (mutations × lineages).
-    Allows a mutation to appear in multiple lineages. Row mass is capped at 1, and GLOBAL = 1 - row_sum.
+    Build the signature matrix S (mutations x lineages) via the shared builder in utils.signatures.
+    S is binary membership: a mutation may belong to any number of lineages, with no row-mass cap.
+    Mutations with no lineage are dropped here (no GLOBAL column).
     """
-    # Normalize & dedupe before pivot (prevents silent column-drop from casing mismatches)
-    sig = sig.copy()
-    sig = _normalize_mutations(sig)                 # << normalize mutation IDs
-    sig["lineage"] = sig["lineage"].astype(str).str.strip()
-    sig["weight"]  = pd.to_numeric(sig["weight"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
-    sig = sig.groupby(["mutation","lineage"], as_index=False)["weight"].max()
-
-    # Ensure reindex target matches normalization
-    muts_up = [str(m).strip().upper() for m in muts]
-
-    Sdf = (sig.pivot_table(index="mutation", columns="lineage", values="weight",
-                           aggfunc="max", fill_value=0.0)
-             .reindex(index=pd.Index(muts_up), fill_value=0.0)
-             .clip(lower=0.0, upper=1.0))
-
-    # Drop all-zero lineage columns (truly unused lineages)
-    zero_cols = Sdf.columns[(Sdf.sum(axis=0) == 0.0)]
-    if len(zero_cols):
-        ctx.log(level="INFO", message="Dropping zero-signal lineages", context={"lineages": list(zero_cols)})
-        Sdf = Sdf.drop(columns=list(zero_cols))
-
-    # Keep only informative mutations
-    row_sum = Sdf.sum(axis=1).astype(float)
-    keep_rows = row_sum > 1e-12
-    dropped = int((~keep_rows).sum())
-    if dropped:
-        ctx.log(level="INFO", message="Dropping non-informative mutations (no lineage signal)", context={"n": dropped})
-    Sdf = Sdf.loc[keep_rows].copy()
-    row_sum = row_sum.loc[keep_rows]
-
-    # Cap row mass at 1.0 then add GLOBAL = 1 - sum_known
-    big = row_sum > 1.0 + 1e-12
-    if big.any():
-        Sdf.loc[big] = Sdf.loc[big].div(row_sum.loc[big], axis=0)
-        row_sum.loc[big] = 1.0
-    Sdf["GLOBAL"] = np.clip(1.0 - row_sum.values, 0.0, 1.0)
+    Sdf = build_signature_matrix(sig, muts, unmapped_to_global=False)
+    if Sdf.empty:
+        raise RuntimeError("No signature rows overlap the priors mutations.")
+    ctx.log(level="INFO", message="Signature matrix built", context={
+        "n_mutations": int(Sdf.shape[0]), "n_lineages": int(Sdf.shape[1]),
+        "n_multi_lineage_mutations": int((Sdf.sum(axis=1) > 1).sum()),
+    })
 
     # Mild collinearity check
     A = Sdf.values
@@ -223,7 +196,6 @@ def _build_S(sig: pd.DataFrame, muts: List[str], ctx: RunContext) -> Tuple[pd.Da
                     message="Near-duplicate lineage signatures detected; consider overlap_penalty_lambda > 0",
                     context={"max_cosine": float(np.max(C))})
 
-    Sdf = Sdf.sort_index().sort_index(axis=1)
     return Sdf, Sdf.values.astype(float, copy=False), list(Sdf.index), list(Sdf.columns)
 
 
@@ -425,11 +397,8 @@ def run_likelihood(cfg_in: Dict[str, Any], ctx: RunContext) -> Dict[str, Any]:
     if not muts_priors: raise RuntimeError("Priors have no mutations.")
 
     sig = _read_csv(cfg.signatures_path)
-    need = {"mutation","lineage","weight"} - set(sig.columns)
+    need = {"mutation","lineage"} - set(sig.columns)
     if need: raise ValueError(f"signatures.csv missing cols: {need}")
-    sig["mutation"] = sig["mutation"].astype(str)
-    sig["lineage"]  = sig["lineage"].astype(str)
-    sig["weight"]   = pd.to_numeric(sig["weight"], errors="coerce").fillna(0.0).clip(0.0,1.0)
 
     Sdf, S, mutations, lineages = _build_S(sig, muts_priors, ctx)
     ctx.write_table("signatures_used", Sdf.reset_index().rename(columns={"index":"mutation"}))

@@ -290,12 +290,13 @@ def _validate_signatures_schema(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[Di
     ok_num = np.issubdtype(df["weight"].dtype, np.number)
     validations.append({"table": "signatures", "check": "weight_is_numeric", "passed": bool(ok_num), "details": f"dtype={df['weight'].dtype}"})
     if ok_num:
-        ok_range = bool(((df["weight"] >= 0) & (df["weight"] <= 1)).all())
-        out_of_range = int(((df["weight"] < 0) | (df["weight"] > 1)).sum())
+        n_not_one = int((df["weight"] != 1).sum())
     else:
-        ok_range = False
-        out_of_range = int(len(df))
-    validations.append({"table": "signatures", "check": "weight_in_[0,1]", "passed": ok_range, "details": f"out_of_range={out_of_range}"})
+        n_not_one = int(len(df))
+    validations.append({"table": "signatures", "check": "weight_equals_1", "passed": n_not_one == 0, "details": f"not_one={n_not_one}"})
+
+    n_dup_pairs = int(df.duplicated(["mutation", "lineage"]).sum())
+    validations.append({"table": "signatures", "check": "mutation_lineage_unique", "passed": n_dup_pairs == 0, "details": f"duplicate_pairs={n_dup_pairs}"})
 
     validations.append({"table": "signatures", "check": "non_empty_table", "passed": int(len(df)) > 0, "details": f"rows={int(len(df))}"})
     return df, validations

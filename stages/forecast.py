@@ -14,6 +14,7 @@ from scipy.stats import betabinom
 
 from utils.plotting import set_matplotlib_style, place_legend_below
 from utils.run import RunContext
+from utils.signatures import build_signature_matrix
 from utils.metrics import rmse
 from utils.logging import utcnow_iso
 
@@ -238,33 +239,6 @@ def _backward_simulation_smoother(
     return theta_path
 
 # -------------------- S builder: guarantee all priors mutations --------------------
-
-def _ensure_S_covers_target_mutations(S_df: pd.DataFrame, target_mutations: pd.Index) -> pd.DataFrame:
-    """
-    Ensure S has rows for every mutation in `target_mutations`.
-    Add/keep GLOBAL column; set GLOBAL=1.0 for missing or all-zero rows.
-    Reindex to target_mutations (sorted), sort columns.
-    """
-    S_df = S_df.copy()
-    # Add missing rows
-    missing = target_mutations.difference(S_df.index)
-    if len(missing):
-        if "GLOBAL" not in S_df.columns:
-            S_df["GLOBAL"] = 0.0
-        add = pd.DataFrame(0.0, index=missing, columns=S_df.columns)
-        add["GLOBAL"] = 1.0
-        S_df = pd.concat([S_df, add], axis=0)
-    # Fix all-zero rows
-    row_max = S_df.max(axis=1)
-    zero_rows = row_max[row_max <= 0.0].index
-    if len(zero_rows):
-        if "GLOBAL" not in S_df.columns:
-            S_df["GLOBAL"] = 0.0
-        S_df.loc[zero_rows, "GLOBAL"] = 1.0
-    # Reindex and sort
-    S_df = S_df.reindex(index=target_mutations, fill_value=0.0)
-    S_df = S_df.sort_index(axis=0).sort_index(axis=1)
-    return S_df
 
 # ------------------------- Plot helpers & analytics -------------------------
 
@@ -584,22 +558,15 @@ def run_forecast(cfg: Dict[str, Any], ctx: RunContext) -> None:
 
     # Load signatures and build S on ALL priors mutations
     df_sign = pd.read_csv(signatures_path)
-    if not {"mutation", "lineage", "weight"}.issubset(df_sign.columns):
-        raise ValueError("Signatures table must have columns: mutation,lineage,weight")
-    df_sign["mutation"] = df_sign["mutation"].astype(str)
-    df_sign["lineage"]  = df_sign["lineage"].astype(str)
-    df_sign["weight"]   = pd.to_numeric(df_sign["weight"], errors="coerce").fillna(0.0).astype(float)
+    if not {"mutation", "lineage"}.issubset(df_sign.columns):
+        raise ValueError("Signatures table must have columns: mutation,lineage (weight, if present, must be 1)")
 
     lineage_subset = filter_cfg.get("lineages", None)
     if lineage_subset:
-        df_sign = df_sign[df_sign["lineage"].isin(lineage_subset)].copy()
+        df_sign = df_sign[df_sign["lineage"].astype(str).isin(lineage_subset)].copy()
 
-    sig_keep = df_sign[df_sign["mutation"].isin(mutations_target)].copy()
-    S_df = sig_keep.pivot_table(index="mutation", columns="lineage", values="weight", aggfunc="mean", fill_value=0.0)
-    S_df = _ensure_S_covers_target_mutations(S_df, mutations_target)
-    if "GLOBAL" not in S_df.columns:
-        S_df["GLOBAL"] = 0.0
-    S_df = S_df.sort_index(axis=0).sort_index(axis=1)
+    # Shared S builder (binary membership); unmapped mutations go to GLOBAL
+    S_df = build_signature_matrix(df_sign, mutations_target, unmapped_to_global=True)
 
     mutations = S_df.index.to_list()
     lineages  = S_df.columns.to_list()
