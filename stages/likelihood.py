@@ -135,6 +135,8 @@ def _load_priors_strict(p: str, ctx: RunContext) -> pd.DataFrame:
     df = _read_csv(p)
     if "mutation" not in df.columns:
         raise ValueError("priors_hyperparams.csv needs 'mutation'")
+    if (df["mutation"].astype(str).str.strip() == "mutation").any():
+        raise ValueError(f"priors_hyperparams.csv contains repeated header lines: {p}")
     df = _normalize_mutations(df)  # << normalize mutation IDs
     for col in ["mu_shrunk","mu","kappa_shrunk","kappa","alpha","beta"]:
         if col in df.columns:

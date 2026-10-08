@@ -828,7 +828,9 @@ def run_priors(cfg: Dict[str,Any], ctx: SimpleCtx|None=None) -> Dict[str,Any]:
     outdir = os.path.join(results_root, "priors")
     _ensure_dir(outdir)
 
-    # Pre-create CSVs
+    # Pre-create CSVs. Files that are appended to per mutation are reset here so a
+    # rerun cannot accumulate stale rows or repeated header lines.
+    append_targets = {"priors_full_detail.csv", "priors_hyperparams.csv", "detail_global_timeseries.csv"}
     for name, cols in [
         ("priors_full_detail.csv",
          ["site_id","date","mutation","count","coverage","af",
@@ -842,7 +844,8 @@ def run_priors(cfg: Dict[str,Any], ctx: SimpleCtx|None=None) -> Dict[str,Any]:
         ("eb_population_prior.csv", ["m_a","m_b","Saa","Sab","Sbb"]),
     ]:
         p = os.path.join(outdir, name)
-        if not os.path.exists(p): pd.DataFrame(columns=cols).to_csv(p, index=False)
+        if name in append_targets or not os.path.exists(p):
+            pd.DataFrame(columns=cols).to_csv(p, index=False)
 
     # Data
     df, mutations = _read_feature_table(ctx, pri)
