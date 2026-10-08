@@ -85,9 +85,9 @@ def _cfg_from(lk: Dict[str, Any]) -> LikelihoodCfg:
 
 # -------------------- IO helpers --------------------
 def _read_csv(p: str, **kw) -> pd.DataFrame:
-    try: return pd.read_csv(p, low_memory=False, **kw)
+    try: return pd.read_csv(p, **kw)
     except (ParserError, UnicodeDecodeError, OSError, MemoryError):
-        return pd.read_csv(p, low_memory=False, engine="python", **kw)
+        return pd.read_csv(p, engine="python", **kw)
 
 def _norm_ts(obj) -> Optional[pd.Timestamp]:
     d = obj

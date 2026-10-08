@@ -85,7 +85,7 @@ def _safe_write_csv(df: pd.DataFrame, path: Path) -> None:
     tmp.replace(path)
 
 def _read_csv_any(path: str) -> pd.DataFrame:
-    return pd.read_csv(path, low_memory=False)
+    return pd.read_csv(path)
 
 def _clip01(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     """Clip to (eps, 1-eps) with explicit float dtype."""
