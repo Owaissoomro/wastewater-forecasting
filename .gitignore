@@ -5,3 +5,4 @@ __pycache__/
 Thumbs.db
 data/usher_barcodes.csv
 results/**
+.posit/assistant/plans/*
