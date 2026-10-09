@@ -15,7 +15,7 @@ io:
   data_dir: data
   results_dir: results
   jahn_like_path: data/jahn_like.csv
-  signatures_path: data/signatures.csv
+  signatures_path: data/signatures_usher_aa.csv
   lineages_path: data/lineages.csv
   write_parquet: true
   image_formats: [pdf, png]
@@ -24,7 +24,7 @@ io:
 
 data:
   jahn_like: "data/jahn_like.csv"
-  signatures: "data/signatures.csv"
+  signatures: "data/signatures_usher_aa.csv"
   lineages: "data/lineages.csv"
 
 plotting:
@@ -74,7 +74,7 @@ output:
 
 data:
   jahn_like: data/jahn_like.csv
-  signatures: data/signatures.csv
+  signatures: data/signatures_usher_aa.csv
   lineages: data/lineages.csv
 
 priors:
@@ -102,7 +102,7 @@ likelihood:
   # ---------- Inputs ----------
   priors_hyperparams_path: results/priors/priors_hyperparams.csv
   priors_time_path:        results/priors/detail_global_timeseries.csv
-  signatures_path:         data/signatures.csv
+  signatures_path:         data/signatures_usher_aa.csv
   snv_counts_path:         results/preprocessing/tables/feature_store_snv.csv
 
   # ---------- Mode ----------
@@ -183,3 +183,12 @@ baseline:
       - {name: jeffreys, alpha: 0.5, beta: 0.5}
       - {name: uniform,  alpha: 1.0, beta: 1.0}
       - {name: beta22,   alpha: 2.0, beta: 2.0}
+
+# ---------------------------
+# Usher-derived signatures with amino-acid names (scripts/build_usher_signatures.py)
+signatures_usher:
+  barcodes_path: data/usher_barcodes.csv     # downloaded from url only if missing
+  reference_path: data/NC_045512.fa
+  url: https://raw.githubusercontent.com/andersen-lab/Freyja/main/freyja/data/usher_barcodes.csv
+  output_path: data/signatures_usher_aa.csv  # never overwritten without --overwrite
+  lineages: [B.1.1.7, B.1.351, B.1.617.2, P.1]

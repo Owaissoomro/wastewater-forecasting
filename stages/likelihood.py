@@ -665,7 +665,7 @@ if __name__ == "__main__":
         "seed": 12345,
         "priors_hyperparams_path": "results/priors/priors_hyperparams.csv",
         "priors_time_path": "results/priors/detail_global_timeseries.csv",
-        "signatures_path": "data/signatures.csv",
+        "signatures_path": "data/signatures_usher_aa.csv",
         "snv_counts_path": "results/preprocessing/tables/feature_store_snv.csv",
         "prior_only": False,
         "prior_only_fill_from_counts": True,

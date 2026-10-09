@@ -38,11 +38,11 @@ PRIORS_DIR = os.path.join(REPO_ROOT, "results", "priors")
 OUT_DIR = os.path.join(REPO_ROOT, "results")
 
 SITE = None  # None -> site with the largest total coverage across all dates
-DATE = None  # None -> date with the highest lineage-composition entropy for SITE
+DATE = "2021-11-30"  # None -> date with the highest lineage-composition entropy for SITE
 
 # "top_leverage" | "highest_coverage" | "best_predicted" | "worst_predicted" | "manual"
 SELECTION = "top_leverage"
-N_PER_LINEAGE = 3
+N_PER_LINEAGE = 10
 MANUAL_MUTATIONS: List[str] = []  # used when SELECTION == "manual"; each goes to its first lineage
 
 LINEAGE_ORDER = ["B.1.1.7", "B.1.351", "P.1", "B.1.617.2", "GLOBAL"]
