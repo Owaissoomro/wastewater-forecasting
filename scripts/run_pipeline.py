@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 
 # ----- repo bootstrap -----
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +27,8 @@ try:
     from utils.seeds import set_global_seeds  # type: ignore
 except Exception:
     def set_global_seeds(seed: int) -> None:
-        import os, random
+        import os
+        import random
         os.environ["PYTHONHASHSEED"] = str(int(seed))
         random.seed(seed)
         np.random.seed(seed)
@@ -53,18 +54,17 @@ except Exception:
     utils_validate_config = None  # type: ignore
 
 # run context
-from utils.run import RunContext  # type: ignore
+from stages.baseline import run_baseline  # type: ignore
+from stages.likelihood import run_likelihood  # type: ignore
 
 # stage runners (each must accept (cfg, ctx))
 from stages.preprocessing import run_preprocessing  # type: ignore
 from stages.priors import run_priors  # type: ignore
-from stages.likelihood import run_likelihood  # type: ignore
-from stages.baseline import run_baseline  # type: ignore
-
+from utils.run import RunContext  # type: ignore
 
 # ===== CONFIG LOADING & VALIDATION =====
 
-def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     out = dict(a)
     for k, v in b.items():
         if k in out and isinstance(out[k], dict) and isinstance(v, dict):
@@ -74,7 +74,7 @@ def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _yaml_load(path: Path) -> Dict[str, Any]:
+def _yaml_load(path: Path) -> dict[str, Any]:
     import yaml
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
@@ -83,8 +83,9 @@ def _yaml_load(path: Path) -> Dict[str, Any]:
     return data
 
 
-def _jsonschema_validate(cfg: Dict[str, Any], schema_path: Path) -> None:
+def _jsonschema_validate(cfg: dict[str, Any], schema_path: Path) -> None:
     import json
+
     from jsonschema import Draft7Validator, RefResolver
     with schema_path.open("r", encoding="utf-8") as fh:
         schema = json.load(fh)
@@ -99,7 +100,7 @@ def _jsonschema_validate(cfg: Dict[str, Any], schema_path: Path) -> None:
         raise ValueError("Config validation failed:\n" + "\n".join(msgs))
 
 
-def load_and_validate_config(paths: List[Path], schema_path: Path) -> Dict[str, Any]:
+def load_and_validate_config(paths: list[Path], schema_path: Path) -> dict[str, Any]:
     """
     Load & merge configs (later files override earlier), then validate.
 
@@ -107,7 +108,7 @@ def load_and_validate_config(paths: List[Path], schema_path: Path) -> Dict[str, 
     Then validate with utils.config.validate_config or JSON Schema.
     """
     # resolve relative paths to repo root
-    resolved: List[Path] = []
+    resolved: list[Path] = []
     for p in paths:
         pp = p if p.is_absolute() else (_REPO_ROOT / p).resolve()
         if not pp.exists():
@@ -115,11 +116,11 @@ def load_and_validate_config(paths: List[Path], schema_path: Path) -> Dict[str, 
         resolved.append(pp)
 
     # try project loader file-by-file
-    cfg: Dict[str, Any] = {}
+    cfg: dict[str, Any] = {}
     used_project_loader = False
     if utils_load_config is not None:
         try:
-            tmp: Dict[str, Any] = {}
+            tmp: dict[str, Any] = {}
             for p in resolved:
                 piece = utils_load_config(str(p))  # <-- single path (string)
                 if not isinstance(piece, dict):
@@ -132,7 +133,7 @@ def load_and_validate_config(paths: List[Path], schema_path: Path) -> Dict[str, 
 
     if not used_project_loader:
         # manual merge via YAML
-        tmp: Dict[str, Any] = {}
+        tmp: dict[str, Any] = {}
         for p in resolved:
             part = _yaml_load(p)
             tmp = _deep_merge(tmp, part)
@@ -171,7 +172,7 @@ def _normalize_stage_name(name: str) -> str:
     return aliases[key]
 
 
-def _get_stage_funcs() -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
+def _get_stage_funcs() -> dict[str, Callable[[dict[str, Any], Any], Any]]:
     return {
         "preprocessing": run_preprocessing,
         "priors":        run_priors,
@@ -180,12 +181,12 @@ def _get_stage_funcs() -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
     }
 
 
-def _stage_order() -> List[str]:
+def _stage_order() -> list[str]:
     # default 'all' order runs baseline last
     return ["preprocessing", "priors", "likelihood", "baseline"]
 
 
-def _parse_stage_selection(arg: Optional[str]) -> List[str]:
+def _parse_stage_selection(arg: str | None) -> list[str]:
     if arg is None or arg.strip().lower() in {"", "all"}:
         return _stage_order()
     names = [s for s in (x.strip() for x in arg.split(",")) if s]
@@ -209,8 +210,8 @@ def _ctx_stage_dir(ctx: Any, stage: str, repo_root: Path) -> Path:
 
 
 def _ctx_log(ctx: Any, level: str, stage: str, message: str,
-             site_id: Optional[str] = None, lineage: Optional[str] = None,
-             context: Optional[Dict[str, Any]] = None) -> None:
+             site_id: str | None = None, lineage: str | None = None,
+             context: dict[str, Any] | None = None) -> None:
     record = {
         "time": str(np.datetime64("now").astype("datetime64[ms]")),
         "level": level.upper(),
@@ -232,7 +233,7 @@ def _ctx_log(ctx: Any, level: str, stage: str, message: str,
 
 # ===== ORCHESTRATION =====
 
-def run_pipeline(config_paths: List[Path], stages: List[str], seed_override: Optional[int] = None) -> Tuple[Dict[str, Any], Dict[str, Path]]:
+def run_pipeline(config_paths: list[Path], stages: list[str], seed_override: int | None = None) -> tuple[dict[str, Any], dict[str, Path]]:
     repo_root = _REPO_ROOT
     schema_path = repo_root / "configs" / "schema.json"
     cfg = load_and_validate_config([Path(p) for p in config_paths], Path(schema_path))
@@ -246,7 +247,7 @@ def run_pipeline(config_paths: List[Path], stages: List[str], seed_override: Opt
     run = RunContext.start(cfg)
 
     stage_funcs = _get_stage_funcs()
-    stage_dirs: Dict[str, Path] = {}
+    stage_dirs: dict[str, Path] = {}
 
     for stage in stages:
         if stage not in stage_funcs:
@@ -281,17 +282,17 @@ def run_pipeline(config_paths: List[Path], stages: List[str], seed_override: Opt
 
 # ===== CLI =====
 
-def _default_config_paths(repo_root: Path) -> List[Path]:
+def _default_config_paths(repo_root: Path) -> list[Path]:
     return [repo_root / "configs" / "default.yaml"]
 
-def _print_summary(stage_dirs: Dict[str, Path]) -> None:
+def _print_summary(stage_dirs: dict[str, Path]) -> None:
     print("Pipeline completed. Stage outputs:")
     for stage, p in stage_dirs.items():
         print(f"  - {stage}: {p}")
 
-def main(argv: Optional[Iterable[str]] = None) -> None:
+def main(argv: Iterable[str] | None = None) -> None:
     repo_root = _REPO_ROOT
-    parser = argparse.ArgumentParser(description="Wright–Fisher Variant Forecasting — Pipeline Runner (minimal)")
+    parser = argparse.ArgumentParser(description="Wright-Fisher Variant Forecasting — Pipeline Runner (minimal)")
     parser.add_argument("-c", "--config", dest="configs", action="append", default=None,
                         help="Path to YAML config (repeatable). Defaults to configs/default.yaml under repo root.")
     parser.add_argument("--stages", type=str, default="all",
